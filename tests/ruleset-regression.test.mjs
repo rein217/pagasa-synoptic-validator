@@ -18,13 +18,13 @@ vm.runInContext(`${configSource}\n${rulesetSource}\nglobalThis.runValidation=Syn
 const pageSource=fs.readFileSync(new URL("../dist/js/app.js",import.meta.url),"utf8");
 assert.ok(rulesetSource.includes("MSLP outside the realistic surface range"));
 assert.ok(!pageSource.includes("MSLP outside the realistic surface range"));
-assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.14.2-separated");
+assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.15.0");
 assert.ok(pageSource.includes("renieragas@gmail.com"),"feedback email must be addressed to the designated reviewer");
 assert.ok(pageSource.includes('document.createElement("a")'),"feedback must launch through an actual mail link");
 const indexSource=fs.readFileSync(new URL("../index.html",import.meta.url),"utf8");
 const rulesPageSource=fs.readFileSync(new URL("../ruleset.html",import.meta.url),"utf8");
 assert.ok(indexSource.includes('href="ruleset.html"'),"ruleset version badge must open the ruleset page");
-assert.ok(rulesPageSource.includes("dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.14.2.pdf"),"ruleset page must show and download the current PDF");
+assert.ok(rulesPageSource.includes("dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf"),"ruleset page must show and download the current PDF");
 
 // Browser-load guard: load app.js after the ruleset as separate classic
 // scripts. This catches global-name collisions that a syntax check misses.
@@ -59,26 +59,26 @@ context.document.getElementById("validate").dispatch("click");
 const savedEntries=JSON.parse(localStorageValues.get(pressureHistoryKey));
 assert.ok(savedEntries.some(entry=>entry.station==="98327"&&entry.day===1&&entry.hour===0&&entry.mslp===1010.7),"validation should save the decoded current MSLP locally");
 
+const rainBox=context.document.getElementById("rainOccurred");
+rainBox.checked=true;
+synopInput.value="AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333=";
+synopInput.dispatch("input");
+rainBox.checked=true;
+synopInput.value="AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 81110=";
+synopInput.dispatch("input");
+assert.equal(rainBox.checked,true,"editing groups in the same observation must preserve the manual rainfall answer");
+synopInput.value="AAXX 01031 98327 11456 80000 10200 20100 40000 50000 333=";
+synopInput.dispatch("input");
+assert.equal(rainBox.checked,false,"a different YYGGi/station observation must clear the rainfall checkbox");
+
 const twentyFourHourRain=context.runValidation("SMPH20 RPLC 050000 AAXX 05001 98327 12465 70701 10278 20249 39942 40115 51015 60074 81108 333 20250 55076 56909 59008 70065 81820 87280=MP",{p3:null,p24:null,rainOccurred:false});
-assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall is implied by the observation"),"a 24-hour rainfall total must not select or require the manual six-hour checkbox");
-assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall weather cross-check unavailable"),"an unchecked manual rainfall box must not request a weather cross-check");
-assert.equal(twentyFourHourRain.decoded["Rainfall 60074"],"7 mm; tR=4","60074 must decode as 7 mm, not 0.7 mm");
+assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall is implied by the observation"),"a 24-hour total must not require the previous-six-hour checkbox");
+assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall weather cross-check unavailable"),"an unchecked manual box must not request a weather cross-check");
+assert.equal(twentyFourHourRain.decoded["Rainfall 60074"],"7 mm; tR=4","60074 must decode as 7 mm");
 const traceRain=context.runValidation("AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 69900=",{p3:null,p24:null,rainOccurred:false});
-assert.equal(traceRain.decoded["Rainfall 69900"],"trace; tR=0","990 must decode as trace rainfall");
+assert.equal(traceRain.decoded["Rainfall 69900"],"trace; tR=0","990 must decode as trace");
 const pointNineRain=context.runValidation("AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 69990=",{p3:null,p24:null,rainOccurred:false});
 assert.equal(pointNineRain.decoded["Rainfall 69990"],"0.9 mm; tR=0","999 must decode as 0.9 mm");
-
-const rainfallCheckbox=context.document.getElementById("rainOccurred");
-rainfallCheckbox.checked=true;
-synopInput.value="AAXX 05001 98327 12465 70701 10278 20249 39942 40115 51015 60074 81108 333";
-synopInput.dispatch("input");
-rainfallCheckbox.checked=true;
-synopInput.value="AAXX 05001 98327 12465 70701 10278 20249 39942 40115 51015 60074 81108 333 81820";
-synopInput.dispatch("input");
-assert.equal(rainfallCheckbox.checked,true,"editing groups in the same observation must preserve the manual rainfall answer");
-synopInput.value="AAXX 05031 98327 22465 70701 10278 20249 39942 40115 51015 333";
-synopInput.dispatch("input");
-assert.equal(rainfallCheckbox.checked,false,"entering a different observation must reset the rainfall checkbox");
 
 const missed=`SIPH20 RPLC 212100 AAXX 21211 98327 32458 72001 10253 20238 39930 40102 55002 83108 333 56909 83820 87360=IC`;
 const missedResult=context.runValidation(missed,{p3:null,p24:null,rainOccurred:false});
@@ -177,7 +177,10 @@ assert.ok(cloudArithmetic.issues.some(issue=>issue.title==="Individual cloud lay
 assert.ok(!cloudArithmetic.issues.some(issue=>issue.title==="Low-cloud amounts do not add up to Nh"),"individual low-cloud layers must not be summed to derive Nh");
 
 const duplicate=context.runValidation(`${baseHead} 11465 52401 10264 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
-assert.ok(duplicate.issues.some(issue=>issue.title==="Duplicate Section 1 group"&&issue.group==="10264"),"duplicate Section 1 groups must be detected");
+assert.ok(duplicate.issues.some(issue=>issue.title==="Duplicate air-temperature group"&&issue.group==="10264 10264"),"duplicate Section 1 groups must be detected by family");
+
+const competingTemperatures=context.runValidation(`SIPH20 RPLB 050300 AAXX 05031 98426 31568 32403 10313 10312 20256 30081 40103 58009 70500 83131 333 56999 83820=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(competingTemperatures.issues.some(issue=>issue.title==="Duplicate air-temperature group"&&issue.group==="10313 10312"),"different 1snTTT values must be detected as duplicate temperature groups");
 
 const warmTwoGroup=context.runValidation(`${baseHead} 11465 52401 10264 20265 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(warmTwoGroup.issues.some(issue=>issue.title==="2-group temperature exceeds air temperature"),"a 0.1 C warmer 2-group must be detected");
@@ -193,6 +196,25 @@ assert.ok(badCloudDirection.issues.some(issue=>issue.title==="Middle-cloud direc
 
 const validHighCloudObscuration=context.runValidation(`SIPH20 RPLC 272100 AAXX 27211 98327 32460 83501 10261 20242 39946 40119 53004 8211/ 333 56999 82820 88460=IC/JG`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(!validHighCloudObscuration.issues.some(issue=>issue.title==="High-cloud obscuration needs review"),"Ns=8 middle cloud must support CH=/ regardless of the CM type-code figure");
+
+const unsupportedHighCloudObscuration=context.runValidation(`AAXX 27211 98327 32460 83501 10261 20242 39946 40119 53004 8211/ 333 56999 82820 86460=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(unsupportedHighCloudObscuration.issues.some(issue=>issue.title==="High-cloud obscuration needs review"),"CH=/ without a 7- or 8-okta middle layer must still be reviewed");
+
+const heavyPrecipitationAt2km=context.runValidation(`AAXX 01001 98327 11420 00000 10200 20100 40000 50000 76400=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!heavyPrecipitationAt2km.issues.some(issue=>issue.title==="Visibility higher than the permitted precipitation range"),"2 km must be accepted for heavy precipitation");
+const heavyPrecipitationAbove2km=context.runValidation(`AAXX 01001 98327 11421 00000 10200 20100 40000 50000 76400=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(heavyPrecipitationAbove2km.issues.some(issue=>issue.title==="Visibility higher than the permitted precipitation range"),"visibility above 2 km must be rejected for heavy precipitation");
+
+const weather40At2km=context.runValidation(`AAXX 01001 98327 11420 00000 10200 20100 40000 50000 74000=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!weather40At2km.issues.some(issue=>issue.title==="Visibility too high for present weather 40"),"2 km must be accepted for ww=40");
+const weather40Above2km=context.runValidation(`AAXX 01001 98327 11421 00000 10200 20100 40000 50000 74000=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(weather40Above2km.issues.some(issue=>issue.title==="Visibility too high for present weather 40"),"visibility above 2 km must be rejected for ww=40");
+
+const combinedCuCb=context.runValidation(`SMPH20 RPLB 050600 AAXX 05061 98426 31459 62205 10314 20261 30056 40078 57025 71711 84963 333 56999 81918 83820 85080 94968=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!combinedCuCb.issues.some(issue=>issue.title==="Invalid CB nature in 949 group"||issue.title==="CB direction group missing"),"94968 must be accepted for isolated Cumulus and Cumulonimbus north of the station");
+
+const unrestrictedHaze=context.runValidation(`SIPH20 RPLB 050300 AAXX 05031 98426 31568 32403 10313 20256 30081 40103 58009 70500 83131 333 56999 83820=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!unrestrictedHaze.issues.some(issue=>issue.title==="Visibility too high for smoke, haze, or dust"),"ww=05 must not impose an absolute upper visibility limit");
 
 const zeroH24=context.runValidation(`${baseHead} 11465 52401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 59000 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:1011.2,rainOccurred:false});
 assert.ok(zeroH24.issues.some(issue=>issue.title==="Zero 24-hour pressure change must use 58"),"zero 24-hour change must use 58000");

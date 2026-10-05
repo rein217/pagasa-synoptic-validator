@@ -90,7 +90,8 @@ function saveCurrentMslp(code,result){
   const slot=observationSlot(code);
   const value=Number.parseFloat(result.decoded["Current MSLP"]);
   const limits=window.SYNOP_RULESET_CONFIG.pressure;
-  if(!slot||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
+  const mslpGroups=result.p.sec1.slice(2).filter(group=>/^4\d{4}$/.test(group));
+  if(!slot||mslpGroups.length!==1||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
   const now=Date.now();
   const entries=storedMslp().filter(entry=>!(entry.station===slot.station&&entry.day===slot.day&&entry.hour===slot.hour));
   entries.push({...slot,mslp:value,savedAt:now});
@@ -101,10 +102,11 @@ function saveCurrentMslp(code,result){
 function updateTime(){
   const code=$("synopCode").value;
   const nextObservationKey=observationKey(code);
-  // A different YYGGi/station combination represents a new observation.
-  // Reset the manual six-hour rainfall answer, but keep it while the user
-  // corrects groups within the same observation after a validation error.
-  if(nextObservationKey&&activeObservationKey&&nextObservationKey!==activeObservationKey) $("rainOccurred").checked=false;
+  // Clear the manual answer only when YYGGi/station identifies a different
+  // observation. Keep it while correcting groups in the same observation.
+  if(nextObservationKey&&activeObservationKey&&nextObservationKey!==activeObservationKey){
+    $("rainOccurred").checked=false;
+  }
   if(nextObservationKey) activeObservationKey=nextObservationKey;
   const p=parseCode(code),ok=/^\d{5}$/.test(p.yy),hour=ok?Number(p.yy.slice(2,4)):null;
   $("obsTimeBadge").textContent=ok?`${String(hour).padStart(2,"0")}:00 UTC detected`:"Time not detected";
@@ -125,7 +127,7 @@ $("validate").addEventListener("click",()=>{
   saveCurrentMslp(code,result);
 });
 $("loadSample").addEventListener("click",()=>{$("synopCode").value=sample4;$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();render(validate(sample4,history()));});
-$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
+$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;activeObservationKey=null;["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
 
 async function copyEnteredCode(){
   const code=$("synopCode").value.trim();

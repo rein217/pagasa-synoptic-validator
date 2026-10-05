@@ -1,18 +1,39 @@
 # Change log
 
-## v0.15.0 rainfall review correction
+## v0.15.0 rainfall correction
 
-- Restored the manual rainfall checkbox used by the earlier checker.
-- Defined the checkbox as rainfall during the six hours immediately preceding
-  observation; longer-duration `6RRRtR` totals do not select it automatically.
-- Removed the misleading "Rainfall is implied by the observation" warning
-  produced solely by a rainfall group.
-- Reset the checkbox when the `YYGGi`/station identity changes, while retaining
-  it when correcting groups in the same observation.
-- Corrected `RRR` decoding: `001` through `989` are whole millimetres, `990` is
-  trace, and `991` through `999` are 0.1 through 0.9 mm.
-- Added a mobile-friendly **Copy code** button and regression tests for the
-  reported `60074` example (`7 mm`, `tR=4`).
+- Preserved the approved v0.15.0 CB, visibility, duplicate-family, pressure,
+  and local-history changes.
+- Reverted only automatic rainfall-checkbox selection.
+- Defined the checkbox as rainfall during the previous six hours and reset it
+  when the YYGGi/station observation identity changes.
+- Preserved the answer while correcting groups within the same observation.
+- Added correct RRR decoding: `60074` is 7 mm with `tR=4`; `990` is trace;
+  and `991` through `999` represent 0.1 through 0.9 mm.
+- Added a mobile-friendly **Copy code** button.
+
+## v0.15.0 reviewed branch update
+
+- Preserved the collaborator's separated project structure and added
+  main/intermediate bulletin validation (`SMPH20`/`SIPH20`).
+- Preserved 36-hour browser-local MSLP history and prevented false pressure
+  mismatches when the required previous MSLP is unavailable.
+- Limited saved MSLP records to one structurally valid, operationally plausible
+  `4PPPP` group and documented browser/device limitations.
+- Centralized rainfall evidence so the UI and validator use the same rule.
+- Excluded `6000t`, `6////`, and snow-only evidence from definite rainfall
+  autofill, and preserved manual checkbox choices.
+- Restored the v0.14.3 boundaries: heavy precipitation and `ww=40` accept
+  visibility up to and including 2 km.
+- Removed the unsupported hard upper visibility limit for `ww=04-06`.
+- Expanded `949CD` to accept C=4, 5, 6, and 7, including combined Cumulus and
+  Cumulonimbus reports such as `94968`.
+- Added semantic duplicate detection, including different competing `1snTTT`
+  values such as `10313 10312`.
+- Restored the negative high-cloud-obscuration regression case and retained the
+  valid PAGASA colloquium case.
+- Added regression reports supplied during operational review and updated the
+  webpage, guide, ruleset document, and cache-version strings.
 
 ## v0.14.2 site-document update
 
