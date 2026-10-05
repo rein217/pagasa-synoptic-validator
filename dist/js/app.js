@@ -10,7 +10,7 @@
 (() => {
 
 const $ = (id) => document.getElementById(id);
-const { parseCode, validate } = window.SynopRuleset;
+const { parseCode, validate, rainfallEvidence } = window.SynopRuleset;
 const sample4 = `SMPH20 RPLC 151200 AAXX 15121 98327 11462 72502 10260 20240 39924 40097 56019 69961 76098 84470 333 10342 56990 58002 84620 87360=JD/MP`;
 const n = (value) => value === "" ? null : Number(value);
 const pressureHistoryKey = "pagasaSynopMslpHistoryV1";
@@ -83,7 +83,8 @@ function saveCurrentMslp(code,result){
   const slot=observationSlot(code);
   const value=Number.parseFloat(result.decoded["Current MSLP"]);
   const limits=window.SYNOP_RULESET_CONFIG.pressure;
-  if(!slot||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
+  const mslpGroups=result.p.sec1.slice(2).filter(group=>/^4\d{4}$/.test(group));
+  if(!slot||mslpGroups.length!==1||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
   const now=Date.now();
   const entries=storedMslp().filter(entry=>!(entry.station===slot.station&&entry.day===slot.day&&entry.hour===slot.hour));
   entries.push({...slot,mslp:value,savedAt:now});
@@ -91,19 +92,7 @@ function saveCurrentMslp(code,result){
 }
 
 function detectRainfallFromCode(code){
-  const p=parseCode(code);
-  const section1Data=p.sec1.slice(2);
-  const weather7=section1Data.find(g=>/^7[0-9\/]{4}$/.test(g));
-  const rain1=section1Data.filter(g=>/^6[0-9\/]{4}$/.test(g));
-  const rain3=p.sec3.filter(g=>/^6[0-9\/]{4}$/.test(g));
-  if(rain1.length||rain3.length) return true;
-  if(!weather7) return false;
-  const ww=Number(weather7.slice(1,3));
-  const w1=Number(weather7[3]);
-  const w2=Number(weather7[4]);
-  const precipitationCode=(ww>=20&&ww<=29)||(ww>=50&&ww<=99);
-  const pastWeatherSupportsRain=[w1,w2].some(v=>v>=5&&v<=9);
-  return precipitationCode||pastWeatherSupportsRain;
+  return rainfallEvidence(code).length>0;
 }
 
 window.detectRainfallFromCode = detectRainfallFromCode;
@@ -115,13 +104,20 @@ function updateTime(){
   $("obsTimeBadge").textContent=ok?`${String(hour).padStart(2,"0")}:00 UTC detected`:"Time not detected";
   $("obsTimeBadge").classList.toggle("active",ok);
   $("p24Wrap").classList.toggle("visible",window.SYNOP_RULESET_CONFIG.schedule.pressure24Hours.includes(hour));
-  if(code.trim() && detectRainfallFromCode(code)) $("rainOccurred").checked=true;
-  else if(code.trim() && !detectRainfallFromCode(code)) $("rainOccurred").checked=false;
+  const rainBox=$("rainOccurred");
+  if(code.trim()&&detectRainfallFromCode(code)&&rainBox.dataset.manuallyChanged!=="true"){
+    rainBox.checked=true;
+    rainBox.dataset.autoFilled="true";
+  }
   fillPressureHistory();
 }
 $("synopCode").addEventListener("input",updateTime);
 $("p3").addEventListener("input",event=>{event.currentTarget.dataset.autoFilled="false";});
 $("p24").addEventListener("input",event=>{event.currentTarget.dataset.autoFilled="false";});
+$("rainOccurred").addEventListener("change",event=>{
+  event.currentTarget.dataset.manuallyChanged="true";
+  event.currentTarget.dataset.autoFilled="false";
+});
 
 // Batch C — button actions.
 $("validate").addEventListener("click",()=>{
@@ -131,8 +127,8 @@ $("validate").addEventListener("click",()=>{
   render(result);
   saveCurrentMslp(code,result);
 });
-$("loadSample").addEventListener("click",()=>{$("synopCode").value=sample4;$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();render(validate(sample4,history()));});
-$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
+$("loadSample").addEventListener("click",()=>{$("synopCode").value=sample4;$("rainOccurred").checked=false;$("rainOccurred").dataset.manuallyChanged="false";$("rainOccurred").dataset.autoFilled="false";["p3","p24"].forEach(id=>$(id).value="");updateTime();render(validate(sample4,history()));});
+$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;$("rainOccurred").dataset.manuallyChanged="false";$("rainOccurred").dataset.autoFilled="false";["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
 
 // Opens the user's own email application. No observation is stored or sent by
 // the webpage itself; the user can review and edit the draft before sending.

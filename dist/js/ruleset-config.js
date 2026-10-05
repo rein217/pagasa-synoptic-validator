@@ -13,7 +13,7 @@
 
 window.SYNOP_RULESET_CONFIG = Object.freeze({
   // Displayed in the page header and successful validation message.
-  version: "v0.14.2-separated",
+  version: "v0.15.0",
 
   // Operational pressure limits in hectopascals.
   pressure: {
@@ -63,8 +63,10 @@ window.SYNOP_RULESET_CONFIG = Object.freeze({
 
   // Cumulonimbus supplementary group 949CD.
   cbNatureCodes: {
-    isolated: "4",
-    numerous: "5"
+    isolatedCb: "4",
+    numerousCb: "5",
+    isolatedCuCb: "6",
+    numerousCuCb: "7"
   },
 
   // The extended monthly rainfall form 6//// RRRRR is intended when

@@ -1,13 +1,17 @@
-# PAGASA SYNOP Validator v0.14.2
+# PAGASA SYNOP Validator v0.15.0
 
 Static WMO FM 12 SYNOP validator using PAGASA operational practices and the
 2023 amended guidelines on surface synoptic observation.
 
-Version 0.14.2 includes a **Report checker issue** button. It opens an editable
+Version 0.15.0 retains the **Report checker issue** button. It opens an editable
 email draft addressed to `renieragas@gmail.com` containing the entered SYNOP
 code and the validator findings. The webpage does not automatically send or
 store the report. This version uses a shorter email link and copies the draft
 as a fallback when the device has no default email application.
+
+This release also adds main/intermediate bulletin checks, 36-hour browser-local
+MSLP history, conservative rainfall autofill, semantic duplicate-group checks,
+and the reviewed visibility and CB rules described in `docs/CHANGELOG.md`.
 
 ## Required website files
 
@@ -19,7 +23,7 @@ Keep the entry pages at the repository root and group the static assets under th
 - `dist/js/app.js`
 - `dist/js/ruleset-config.js`
 - `dist/js/ruleset.js`
-- `dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.14.2.pdf`
+- `dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf`
 
 The documentation and `tests` folder are recommended but are not required for
 the webpage to load.
@@ -55,10 +59,11 @@ cloud, pressure, and additional-error regression checks passed
    repository root, not inside another folder.
 4. When GitHub asks about files with the same name, allow the new files to
    replace the older versions.
-5. Enter a commit message such as `Update PAGASA SYNOP Validator to v0.14.2`.
-6. Select **Commit directly to the main branch**. If that choice is unavailable,
-   select **Create a new branch and start a pull request**, then merge the pull
-   request into `main`.
+5. Enter a commit message such as `Review and update v0.15.0`.
+6. While reviewing, commit to the existing `v0.15.0` branch. Do not merge it
+   into `main` until its branch preview and regression tests are approved.
+7. Open a pull request from `v0.15.0` to `main`, review the listed changes, and
+   merge only after operational acceptance.
 
 ## GitHub Pages settings
 
