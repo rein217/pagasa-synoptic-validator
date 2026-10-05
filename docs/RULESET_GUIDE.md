@@ -2,8 +2,6 @@
 
 The website is divided into three JavaScript files so that operational rules can be reviewed without touching the page controls.
 
-Current reviewed release: **v0.15.0**.
-
 ## 1. `dist/ruleset-config.js`
 
 Start here for routine policy changes. It contains readable settings for:
@@ -46,58 +44,24 @@ This controls the visible webpage:
 
 Changing an operational meteorological rule should normally not require editing this file.
 
-## v0.15.0 operational behavior
+### Manual rainfall checkbox
 
-### Bulletin type and observation time
+The checkbox answers one specific question: **did rainfall occur during the
+six hours immediately before this observation?** It is not derived from a
+`6RRRtR` group because that group may cover a longer period. For example,
+`60074` at 00 UTC means 7 mm over 24 hours; it does not show in which six-hour
+part of that day the rain occurred.
 
-- `SMPH20` is expected at 00, 06, 12, and 18 UTC.
-- `SIPH20` is expected at 03, 09, 15, and 21 UTC.
-- The bulletin day/hour is compared with `AAXX YYGGiw` when both are present.
+The rainfall code is decoded as follows:
 
-### Local pressure history
+- `RRR=001` to `989`: 1 to 989 mm;
+- `RRR=990`: trace;
+- `RRR=991` to `999`: 0.1 to 0.9 mm.
 
-- A structurally valid, plausible `4PPPP` MSLP is retained for 36 hours.
-- Matching uses the station identifier and SYNOP day/hour.
-- Three-hour history may fill `5appp`; 24-hour history may fill `58/59` at
-  00 and 12 UTC.
-- Manual pressure entries are not overwritten.
-- Storage is limited to the current browser and device. It is not synchronized.
-- Matching is skipped where the missing month/year makes a month crossing
-  uncertain.
-
-### Rainfall checkbox
-
-- A measurable/trace `6RRRtR` or liquid-precipitation weather evidence may
-  select the checkbox automatically.
-- `6000t` and `6////` do not establish definite rainfall occurrence.
-- Snow-only weather is not automatically treated as rainfall.
-- A user's manual checkbox choice is preserved while the code is edited.
-- The rules engine and webpage use the same rainfall-evidence function.
-
-### Visibility
-
-- Heavy precipitation permits horizontal visibility of 2 km or less.
-- `ww=40` permits horizontal visibility of 2 km or less.
-- `ww=04`, `05`, and `06` have no mandatory upper visibility limit. The haze
-  intensity table is guidance and is not enforced as an error threshold.
-
-### CB supplementary group
-
-The accepted `949CD` nature figures are:
-
-- `C=4`: isolated cumulonimbus;
-- `C=5`: numerous cumulonimbus;
-- `C=6`: isolated cumulus and cumulonimbus; and
-- `C=7`: numerous cumulus and cumulonimbus.
-
-More than one `949CD` group may be reported for different directions.
-
-### Duplicate Section 1 groups
-
-The validator compares group families, not only complete strings. For example,
-`10313 10312` is reported as two competing `1snTTT` groups. The same check is
-applied to the single-occurrence temperature, humidity/dew point, station
-pressure, MSLP, pressure tendency, weather, and main-cloud families.
+The webpage clears the checkbox when a different `YYGGi`/station observation
+is entered. It preserves the answer while groups within that same observation
+are edited, which allows an erroneous report to be corrected without losing
+the observer's six-hour rainfall answer.
 
 ## Safe editing workflow
 

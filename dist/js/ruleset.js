@@ -26,28 +26,20 @@ function signedTemperature(group) {
 }
 function n(v) { return v === "" ? null : Number(v); }
 
+// Decode RRR in 6RRRtR. Values 001–989 are whole millimetres,
+// 990 means trace, and 991–999 mean 0.1–0.9 mm.
+function rainfallAmount(rrr){
+  if(!/^\d{3}$/.test(rrr)) return null;
+  const value=Number(rrr);
+  if(value===990) return {millimetres:0,label:"trace"};
+  if(value>=991&&value<=999){const mm=(value-990)/10;return {millimetres:mm,label:`${mm.toFixed(1)} mm`};}
+  return {millimetres:value,label:`${value} mm`};
+}
+
 function duplicateGroups(groups){
   const seen=new Set(),duplicates=new Set();
   groups.forEach(g=>{if(seen.has(g)) duplicates.add(g);else seen.add(g)});
   return [...duplicates];
-}
-
-// Most Section 1 groups may appear only once. Compare their coded family,
-// not the complete value, so 10313 followed by 10312 is still a duplicate.
-function duplicateSection1Families(groups){
-  const definitions=[
-    {pattern:/^1[01]\d{3}$/,title:"Duplicate air-temperature group",name:"1snTTT air-temperature"},
-    {pattern:/^2[019]\d{3}$/,title:"Duplicate dew-point or humidity group",name:"2snTdTdTd/29UUU"},
-    {pattern:/^3\d{4}$/,title:"Duplicate station-pressure group",name:"3P0P0P0P0 station-pressure"},
-    {pattern:/^4\d{4}$/,title:"Duplicate MSLP group",name:"4PPPP mean sea-level pressure"},
-    {pattern:/^5[0-8]\d{3}$/,title:"Duplicate pressure-tendency group",name:"5appp pressure-tendency"},
-    {pattern:/^7[0-9\/]{4}$/,title:"Duplicate present/past-weather group",name:"7wwW1W2 weather"},
-    {pattern:/^8[0-9\/]{4}$/,title:"Duplicate main-cloud group",name:"8NhCLCMCH cloud"}
-  ];
-  return definitions.flatMap(def=>{
-    const matches=groups.filter(group=>def.pattern.test(group));
-    return matches.length>1?[{...def,matches}]:[];
-  });
 }
 
 function visibilityRangeKm(vv){
@@ -69,7 +61,7 @@ function precipitationVisibility(ww){
   const moderateHeavy=[57,59,67,69,81,84,86,88,90,92,94];
   if(light.includes(ww)) return {label:"light precipitation",min:9,max:Infinity,range:"9 km or more"};
   if(moderate.includes(ww)) return {label:"moderate precipitation",min:2,max:9,range:"2 km to less than 9 km"};
-  if(heavy.includes(ww)) return {label:"heavy precipitation",min:0,max:2,maxInclusive:true,range:"2 km or less"};
+  if(heavy.includes(ww)) return {label:"heavy precipitation",min:0,max:2,range:"less than 2 km"};
   if(moderateHeavy.includes(ww)) return {label:"moderate or heavy precipitation",min:0,max:9,range:"less than 9 km"};
   if([95,96].includes(ww)) return {label:"slight or moderate thunderstorm precipitation",min:2,max:Infinity,range:"2 km or more"};
   return null;
@@ -155,23 +147,6 @@ function precipitationCloudRule(ww){
   return null;
 }
 
-// Evidence used by both the validator and the page's single rainfall box.
-// Zero (6000t) and missing (6////) amounts are not definite rainfall.
-function rainfallEvidenceFromParsed(p){
-  const section1Data=p.sec1.slice(2);
-  const evidence=[
-    ...section1Data.filter(g=>/^6[0-9\/]{4}$/.test(g)),
-    ...p.sec3.filter(g=>/^6[0-9\/]{4}$/.test(g))
-  ].filter(g=>!/^6(?:000|\/{3})[0-9\/]$/.test(g));
-  const weather7=section1Data.find(g=>/^7[0-9\/]{4}$/.test(g));
-  if(!weather7) return evidence;
-  const ww=Number(weather7.slice(1,3)),w1=Number(weather7[3]),w2=Number(weather7[4]);
-  const liquidPresent=(ww>=20&&ww<=21)||ww===24||ww===25||(ww>=50&&ww<=67)||(ww>=80&&ww<=82)||[91,92,95,96,97,99].includes(ww);
-  const liquidPast=[w1,w2].some(w=>[5,6,8,9].includes(w));
-  if(liquidPresent||liquidPast) evidence.push(weather7);
-  return evidence;
-}
-
 function parseCode(raw) {
   const clean=raw.trim().replace(/\s+/g," ");
   const beforeSig=clean.split("=")[0].trim();
@@ -229,8 +204,8 @@ function validate(raw, history={}) {
     }
   }
   p.sec1.forEach(g=>{if(g.length!==5||!/^[0-9\/]{5}$/.test(g)) addIssue(issues,"error","Invalid Section 1 group format","Each data group must contain five figures or solidi.",g);});
+  duplicateGroups(p.sec1).forEach(g=>addIssue(issues,"error","Duplicate Section 1 group",`${g} is reported more than once in Section 1.`,g,"Remove the duplicate after confirming which entry is correct."));
   const section1Data=p.sec1.slice(2);
-  duplicateSection1Families(section1Data).forEach(duplicate=>addIssue(issues,"error",duplicate.title,`Section 1 contains more than one ${duplicate.name} group.`,duplicate.matches.join(" "),"Retain the correct observed value and remove the other entry."));
   const tGroup=section1Data.find(g=>/^1[01]\d{3}$/.test(g));
   const tdGroup=section1Data.find(g=>/^2[01]\d{3}$/.test(g));
   const temp=tGroup?signedTemperature(tGroup):null, dew=tdGroup?signedTemperature(tdGroup):null;
@@ -278,8 +253,15 @@ function validate(raw, history={}) {
   }
 
   const weather7=section1Data.find(g=>/^7[0-9\/]{4}$/.test(g));
-  const rainfallEvidence=rainfallEvidenceFromParsed(p);
-  if(history.rainOccurred===false && rainfallEvidence.length>0) addIssue(issues,"warning","Rainfall is implied by the observation",`The report includes rainfall evidence (${rainfallEvidence.join(" ")}), but the rainfall checkbox is not checked.`,rainfallEvidence.join(" "),"Review the observation and check the rainfall box if precipitation is present.");
+
+  // Do not infer the manual six-hour checkbox from 6RRRtR. At 00 UTC, for
+  // example, tR=4 covers 24 hours and cannot locate the rain within the most
+  // recent six hours.
+  [...rain1,...rain3].forEach(g=>{
+    if(!/^6\d{4}$/.test(g)) return;
+    const amount=rainfallAmount(g.slice(1,4));
+    if(amount) decoded[`Rainfall ${g}`]=`${amount.label}; tR=${g[4]}`;
+  });
 
   const nationalRain=p.sec5.find(g=>/^2\d{4}$/.test(g));
   if(nationalRain&&Number(nationalRain.slice(1))>0&&!weather7) addIssue(issues,"error","Rainfall requires present or past weather",`${nationalRain} reports rainfall during the preceding six hours, but no 7wwW1W2 group is available for the present/past weather cross-check.`,`${p.sec1[0]} 555 ${nationalRain}`,"Correct ix and include 7wwW1W2 with the observed present and past weather.");
@@ -298,11 +280,9 @@ function validate(raw, history={}) {
       decoded["Horizontal visibility"]=`VV=${vvCode}: ${visibility[2]}`;
       const expected=precipitationVisibility(ww);
       if(expected&&visibility[1]<expected.min) addIssue(issues,"warning","Visibility lower than the suggested precipitation range",`ww=${ww} indicates ${expected.label}, for which the suggested visibility is ${expected.range}; VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`,"Review the reported precipitation intensity and visibility for consistency.");
-      const abovePrecipitationMaximum=expected&&Number.isFinite(expected.max)&&(expected.maxInclusive?visibility[0]>expected.max:visibility[0]>=expected.max);
-      if(abovePrecipitationMaximum) addIssue(issues,"error","Visibility higher than the permitted precipitation range",`ww=${ww} indicates ${expected.label}, for which the suggested visibility is ${expected.range}; VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`,"Correct VV or the present-weather intensity after checking the observation.");
-      // MANOBS does not impose an absolute visibility limit for ww 04-06.
+      if(expected&&Number.isFinite(expected.max)&&visibility[0]>=expected.max) addIssue(issues,"error","Visibility higher than the permitted precipitation range",`ww=${ww} indicates ${expected.label}, for which the suggested visibility is ${expected.range}; VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`,"Correct VV or the present-weather intensity after checking the observation.");
+      if([4,5,6].includes(ww)&&visibility[0]>=10) addIssue(issues,"error","Visibility too high for smoke, haze, or dust",`ww=${String(ww).padStart(2,"0")} normally corresponds to horizontal visibility below 10 km, but VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`);
       if(ww>=41&&ww<=49&&visibility[0]>=1) addIssue(issues,"error","Visibility too high for fog at the station",`ww=${ww} reports fog or ice fog at the station, for which visibility should be below 1 km; VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`);
-      if(ww===40&&visibility[0]>2) addIssue(issues,"error","Visibility too high for present weather 40",`ww=40 reports fog at a distance, for which horizontal visibility should be 2 km or less; VV=${vvCode} reports ${visibility[2]}.`,`${p.sec1[0]} ${weather7}`,"Correct VV or the present-weather code after checking the observation.");
       const visibilityReducingWeather=(ww>=4&&ww<=12)||(ww>=20&&ww<=99);
       if(visibility[1]<=RULES.unexplainedVisibilityWarningKm&&!visibilityReducingWeather) addIssue(issues,"warning","Low visibility is not supported by present weather",`VV=${vvCode} reports ${visibility[2]}, but ww=${String(ww).padStart(2,"0")} does not identify precipitation, mist, haze, fog, or another weather phenomenon that explains visibility of ${RULES.unexplainedVisibilityWarningKm} km or less.`,`${p.sec1[0]} ${weather7}`,"Review VV and report the observed visibility-reducing weather when applicable.");
     }
@@ -446,11 +426,10 @@ function validate(raw, history={}) {
   const cbDirections=["overhead/stationary","NE","E","SE","S","SW","W","NW","N","unknown"];
   cbGroups.forEach(g=>{
     const cbCodes=Object.values(RULES.cbNatureCodes);
-    const meanings={4:"isolated cumulonimbus",5:"numerous cumulonimbus",6:"isolated cumulus and cumulonimbus",7:"numerous cumulus and cumulonimbus"};
-    if(!cbCodes.includes(g[3])) addIssue(issues,"error","Invalid CB nature in 949 group",`${g} must use C=4, 5, 6, or 7 when cumulonimbus is reported.`,g,"Use 4/5 for CB alone or 6/7 for Cumulus and CB, with D=0-9 for direction.");
-    else decoded[`CB ${g}`]=`${meanings[g[3]]}, ${cbDirections[Number(g[4])]}`;
+    if(!cbCodes.includes(g[3])) addIssue(issues,"error","Invalid CB nature in 949 group",`${g} must use C=${RULES.cbNatureCodes.isolated} for isolated cumulonimbus or C=${RULES.cbNatureCodes.numerous} for numerous cumulonimbus.`,g);
+    else decoded[`CB ${g}`]=`${g[3]===RULES.cbNatureCodes.isolated?"isolated":"numerous"} CB, ${cbDirections[Number(g[4])]}`;
   });
-  if(cbInClouds&&!cbGroups.some(g=>g.startsWith("949")&&Object.values(RULES.cbNatureCodes).includes(g[3])&&/\d/.test(g[4]))) addIssue(issues,"error","CB direction group missing","Cumulonimbus is reported in the cloud groups, but no valid 949CD group gives its nature and direction.",primaryCloud||layerClouds.find(g=>g[2]==="9"),"Add one or more 949CD groups using C=4, 5, 6, or 7 and D=0-9.");
+  if(cbInClouds&&!cbGroups.some(g=>g.startsWith("949")&&Object.values(RULES.cbNatureCodes).includes(g[3])&&/\d/.test(g[4]))) addIssue(issues,"error","CB direction group missing","Cumulonimbus is reported in the cloud groups, but no valid 949CD group gives its nature and direction.",primaryCloud||layerClouds.find(g=>g[2]==="9"),`Add one or more 949CD groups: C=${RULES.cbNatureCodes.isolated} isolated or C=${RULES.cbNatureCodes.numerous} numerous; D=0-9 direction.`);
   if(primaryCloud&&[3,9].includes(Number(primaryCloud[2]))&&!layerClouds.some(g=>g[2]==="9")) addIssue(issues,"error","CB reportable-cloud group missing","CL reports Cumulonimbus, but no 8Ns9hshs group reports the CB layer. Under the 1-3-5 practice, CB is always reported when observed.",primaryCloud,"Add the observed CB as an 8Ns9hshs group. Other low-cloud layers may also be reported when they qualify; CB does not exclude them.");
   if(!cbInClouds&&cbGroups.length) addIssue(issues,"warning","949 CB group conflicts with cloud report","A 949CD group is present, but cumulonimbus was not found in the Section 1 or reportable Section 3 cloud groups.",cbGroups.join(" "));
 
@@ -522,6 +501,5 @@ function validate(raw, history={}) {
 window.SynopRuleset = Object.freeze({
   version: RULES.version,
   parseCode,
-  validate,
-  rainfallEvidence(code){return rainfallEvidenceFromParsed(parseCode(code));}
+  validate
 });

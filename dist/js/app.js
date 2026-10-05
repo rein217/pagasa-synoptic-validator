@@ -10,12 +10,13 @@
 (() => {
 
 const $ = (id) => document.getElementById(id);
-const { parseCode, validate, rainfallEvidence } = window.SynopRuleset;
+const { parseCode, validate } = window.SynopRuleset;
 const sample4 = `SMPH20 RPLC 151200 AAXX 15121 98327 11462 72502 10260 20240 39924 40097 56019 69961 76098 84470 333 10342 56990 58002 84620 87360=JD/MP`;
 const n = (value) => value === "" ? null : Number(value);
 const pressureHistoryKey = "pagasaSynopMslpHistoryV1";
 const pressureHistoryMaxAge = 36 * 60 * 60 * 1000;
 let lastResult = null;
+let activeObservationKey = null;
 
 // Batch A — turn validator results into readable cards.
 function render(result){
@@ -39,6 +40,12 @@ function observationSlot(code){
   const day=Number(match[1]),hour=Number(match[2]);
   if(day<1||day>31||hour>23) return null;
   return {station:parsed.station,day,hour};
+}
+
+function observationKey(code){
+  const parsed=parseCode(code);
+  if(!/^\d{5}$/.test(parsed.yy)||!/^\d{5}$/.test(parsed.station)) return null;
+  return `${parsed.yy}:${parsed.station}`;
 }
 
 function previousSlot(slot,hours){
@@ -83,41 +90,31 @@ function saveCurrentMslp(code,result){
   const slot=observationSlot(code);
   const value=Number.parseFloat(result.decoded["Current MSLP"]);
   const limits=window.SYNOP_RULESET_CONFIG.pressure;
-  const mslpGroups=result.p.sec1.slice(2).filter(group=>/^4\d{4}$/.test(group));
-  if(!slot||mslpGroups.length!==1||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
+  if(!slot||!Number.isFinite(value)||value<limits.minimumMslp||value>limits.maximumMslp) return;
   const now=Date.now();
   const entries=storedMslp().filter(entry=>!(entry.station===slot.station&&entry.day===slot.day&&entry.hour===slot.hour));
   entries.push({...slot,mslp:value,savedAt:now});
   try{window.localStorage.setItem(pressureHistoryKey,JSON.stringify(entries.slice(-100)));}catch{}
 }
 
-function detectRainfallFromCode(code){
-  return rainfallEvidence(code).length>0;
-}
-
-window.detectRainfallFromCode = detectRainfallFromCode;
-
 // Batch B — detect the report time and show the 24-hour field when needed.
 function updateTime(){
   const code=$("synopCode").value;
+  const nextObservationKey=observationKey(code);
+  // A different YYGGi/station combination represents a new observation.
+  // Reset the manual six-hour rainfall answer, but keep it while the user
+  // corrects groups within the same observation after a validation error.
+  if(nextObservationKey&&activeObservationKey&&nextObservationKey!==activeObservationKey) $("rainOccurred").checked=false;
+  if(nextObservationKey) activeObservationKey=nextObservationKey;
   const p=parseCode(code),ok=/^\d{5}$/.test(p.yy),hour=ok?Number(p.yy.slice(2,4)):null;
   $("obsTimeBadge").textContent=ok?`${String(hour).padStart(2,"0")}:00 UTC detected`:"Time not detected";
   $("obsTimeBadge").classList.toggle("active",ok);
   $("p24Wrap").classList.toggle("visible",window.SYNOP_RULESET_CONFIG.schedule.pressure24Hours.includes(hour));
-  const rainBox=$("rainOccurred");
-  if(code.trim()&&detectRainfallFromCode(code)&&rainBox.dataset.manuallyChanged!=="true"){
-    rainBox.checked=true;
-    rainBox.dataset.autoFilled="true";
-  }
   fillPressureHistory();
 }
 $("synopCode").addEventListener("input",updateTime);
 $("p3").addEventListener("input",event=>{event.currentTarget.dataset.autoFilled="false";});
 $("p24").addEventListener("input",event=>{event.currentTarget.dataset.autoFilled="false";});
-$("rainOccurred").addEventListener("change",event=>{
-  event.currentTarget.dataset.manuallyChanged="true";
-  event.currentTarget.dataset.autoFilled="false";
-});
 
 // Batch C — button actions.
 $("validate").addEventListener("click",()=>{
@@ -127,8 +124,22 @@ $("validate").addEventListener("click",()=>{
   render(result);
   saveCurrentMslp(code,result);
 });
-$("loadSample").addEventListener("click",()=>{$("synopCode").value=sample4;$("rainOccurred").checked=false;$("rainOccurred").dataset.manuallyChanged="false";$("rainOccurred").dataset.autoFilled="false";["p3","p24"].forEach(id=>$(id).value="");updateTime();render(validate(sample4,history()));});
-$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;$("rainOccurred").dataset.manuallyChanged="false";$("rainOccurred").dataset.autoFilled="false";["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
+$("loadSample").addEventListener("click",()=>{$("synopCode").value=sample4;$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();render(validate(sample4,history()));});
+$("clear").addEventListener("click",()=>{$("synopCode").value="";$("rainOccurred").checked=false;["p3","p24"].forEach(id=>$(id).value="");updateTime();$("results").innerHTML=`<div class="empty-state"><div class="empty-icon">✓</div><h2>Ready to check</h2><p>Paste an observation and provide its pressure history.</p></div>`;});
+
+async function copyEnteredCode(){
+  const code=$("synopCode").value.trim();
+  if(!code){window.alert("Enter the SYNOP observation first.");return;}
+  let copied=false;
+  try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(code);copied=true;}}catch{}
+  if(!copied){
+    const area=$("synopCode");area.focus();area.select();
+    try{copied=document.execCommand("copy");}catch{}
+  }
+  $("copyStatus").hidden=false;
+  $("copyStatus").textContent=copied?"SYNOP code copied.":"Could not copy automatically. Select the code and use your device’s Copy command.";
+}
+$("copyCode").addEventListener("click",copyEnteredCode);
 
 // Opens the user's own email application. No observation is stored or sent by
 // the webpage itself; the user can review and edit the draft before sending.
@@ -191,7 +202,7 @@ $("reportIssue").addEventListener("click",()=>{
 });
 
 if(document.modelContext?.registerTool){
-  try{document.modelContext.registerTool({name:"validate_synop",title:"Validate SYNOP",description:"Validate one WMO FM 12 SYNOP observation using the same rules and supporting inputs as the visible checker.",inputSchema:{type:"object",properties:{code:{type:"string"},mslp_3h_ago:{type:"number"},mslp_24h_ago:{type:"number"},rainfall_occurred:{type:"boolean"}},required:["code"],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute(input){if(!input||typeof input.code!=="string")throw new Error("code must be a string");const h={p3:input.mslp_3h_ago??null,p24:input.mslp_24h_ago??null,rainOccurred:input.rainfall_occurred===true};$("synopCode").value=input.code;$("rainOccurred").checked=h.rainOccurred;$("p3").value=h.p3??"";$("p24").value=h.p24??"";updateTime();const r=validate(input.code,h);render(r);return {status:r.issues.some(x=>x.severity==="error")?"invalid":r.issues.some(x=>x.severity==="warning")?"warning":"valid",issues:r.issues,decoded:r.decoded};}})}catch(e){console.warn("WebMCP registration unavailable",e)}
+  try{document.modelContext.registerTool({name:"validate_synop",title:"Validate SYNOP",description:"Validate one WMO FM 12 SYNOP observation using the same rules and supporting inputs as the visible checker.",inputSchema:{type:"object",properties:{code:{type:"string"},mslp_3h_ago:{type:"number"},mslp_24h_ago:{type:"number"},rainfall_occurred:{type:"boolean"}},required:["code"],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute(input){if(!input||typeof input.code!=="string")throw new Error("code must be a string");const h={p3:input.mslp_3h_ago??null,p24:input.mslp_24h_ago??null,rainOccurred:input.rainfall_occurred===true};$("synopCode").value=input.code;$("p3").value=h.p3??"";$("p24").value=h.p24??"";updateTime();$("rainOccurred").checked=h.rainOccurred;const r=validate(input.code,h);render(r);return {status:r.issues.some(x=>x.severity==="error")?"invalid":r.issues.some(x=>x.severity==="warning")?"warning":"valid",issues:r.issues,decoded:r.decoded};}})}catch(e){console.warn("WebMCP registration unavailable",e)}
 }
 
 })();
