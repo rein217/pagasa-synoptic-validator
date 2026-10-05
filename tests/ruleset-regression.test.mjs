@@ -2,31 +2,83 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const element=()=>({value:"",checked:false,textContent:"",innerHTML:"",addEventListener(){},classList:{toggle(){}}});
+const element=()=>({value:"",checked:false,textContent:"",innerHTML:"",dataset:{},listeners:{},addEventListener(name,handler){this.listeners[name]=handler;},dispatch(name){this.listeners[name]?.({currentTarget:this});},classList:{toggle(){}}});
 const elements=new Map();
 const context={console,document:{getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},modelContext:null}};
+const localStorageValues=new Map();
+context.localStorage={getItem(key){return localStorageValues.get(key)??null;},setItem(key,value){localStorageValues.set(key,value);}};
 context.window=context;
 vm.createContext(context);
-const configSource=fs.readFileSync(new URL("../ruleset-config.js",import.meta.url),"utf8");
-const rulesetSource=fs.readFileSync(new URL("../ruleset.js",import.meta.url),"utf8");
+const configSource=fs.readFileSync(new URL("../dist/js/ruleset-config.js",import.meta.url),"utf8");
+const rulesetSource=fs.readFileSync(new URL("../dist/js/ruleset.js",import.meta.url),"utf8");
 vm.runInContext(`${configSource}\n${rulesetSource}\nglobalThis.runValidation=SynopRuleset.validate;`,context);
 
 // Architecture guard: meteorological findings belong in the ruleset,
 // while the page controller should not contain operational error rules.
-const pageSource=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
+const pageSource=fs.readFileSync(new URL("../dist/js/app.js",import.meta.url),"utf8");
 assert.ok(rulesetSource.includes("MSLP outside the realistic surface range"));
 assert.ok(!pageSource.includes("MSLP outside the realistic surface range"));
-assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.14.3-separated");
+assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.15.0");
 assert.ok(pageSource.includes("renieragas@gmail.com"),"feedback email must be addressed to the designated reviewer");
 assert.ok(pageSource.includes('document.createElement("a")'),"feedback must launch through an actual mail link");
 const indexSource=fs.readFileSync(new URL("../index.html",import.meta.url),"utf8");
 const rulesPageSource=fs.readFileSync(new URL("../ruleset.html",import.meta.url),"utf8");
 assert.ok(indexSource.includes('href="ruleset.html"'),"ruleset version badge must open the ruleset page");
-assert.ok(rulesPageSource.includes("PAGASA_SYNOP_Validator_Ruleset_v0.14.3.pdf"),"ruleset page must show and download the current PDF");
+assert.ok(rulesPageSource.includes("dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf"),"ruleset page must show and download the current PDF");
 
 // Browser-load guard: load app.js after the ruleset as separate classic
 // scripts. This catches global-name collisions that a syntax check misses.
 vm.runInContext(pageSource,context,{filename:"app.js"});
+
+const pressureHistoryKey="pagasaSynopMslpHistoryV1";
+const savedAt=Date.now();
+localStorageValues.set(pressureHistoryKey,JSON.stringify([
+	{station:"98327",day:17,hour:9,mslp:1008.0,savedAt},
+	{station:"98327",day:16,hour:12,mslp:1009.5,savedAt},
+	{station:"12345",day:17,hour:9,mslp:999.0,savedAt},
+	{station:"98327",day:17,hour:9,mslp:1000.0,savedAt:savedAt-37*60*60*1000}
+]));
+const synopInput=context.document.getElementById("synopCode");
+const p3Input=context.document.getElementById("p3");
+const p24Input=context.document.getElementById("p24");
+synopInput.value="AAXX 17121 98327 11462 72502 10260 20240 39924 40107 56019 333";
+synopInput.dispatch("input");
+assert.equal(p3Input.value,"1008.0","3-hour MSLP should autofill for the same station and target day/hour");
+assert.equal(p24Input.value,"1009.5","24-hour MSLP should autofill at a scheduled hour");
+assert.ok(!JSON.parse(localStorageValues.get(pressureHistoryKey)).some(entry=>entry.mslp===1000.0),"expired MSLP records should be removed from localStorage on lookup");
+p3Input.value="1007.0";
+p3Input.dispatch("input");
+synopInput.value="AAXX 17131 98327 11462 72502 10260 20240 39924 40107 56019 333";
+synopInput.dispatch("input");
+assert.equal(p3Input.value,"1007.0","manual pressure entries must not be overwritten by autofill");
+
+synopInput.value="AAXX 01001 98327 11462 72502 10260 20240 39924 40107 56019 333";
+synopInput.dispatch("input");
+assert.equal(p24Input.value,"","24-hour history must not guess across an unknown month boundary");
+context.document.getElementById("validate").dispatch("click");
+const savedEntries=JSON.parse(localStorageValues.get(pressureHistoryKey));
+assert.ok(savedEntries.some(entry=>entry.station==="98327"&&entry.day===1&&entry.hour===0&&entry.mslp===1010.7),"validation should save the decoded current MSLP locally");
+
+const rainBox=context.document.getElementById("rainOccurred");
+rainBox.checked=true;
+synopInput.value="AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333=";
+synopInput.dispatch("input");
+rainBox.checked=true;
+synopInput.value="AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 81110=";
+synopInput.dispatch("input");
+assert.equal(rainBox.checked,true,"editing groups in the same observation must preserve the manual rainfall answer");
+synopInput.value="AAXX 01031 98327 11456 80000 10200 20100 40000 50000 333=";
+synopInput.dispatch("input");
+assert.equal(rainBox.checked,false,"a different YYGGi/station observation must clear the rainfall checkbox");
+
+const twentyFourHourRain=context.runValidation("SMPH20 RPLC 050000 AAXX 05001 98327 12465 70701 10278 20249 39942 40115 51015 60074 81108 333 20250 55076 56909 59008 70065 81820 87280=MP",{p3:null,p24:null,rainOccurred:false});
+assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall is implied by the observation"),"a 24-hour total must not require the previous-six-hour checkbox");
+assert.ok(!twentyFourHourRain.issues.some(issue=>issue.title==="Rainfall weather cross-check unavailable"),"an unchecked manual box must not request a weather cross-check");
+assert.equal(twentyFourHourRain.decoded["Rainfall 60074"],"7 mm; tR=4","60074 must decode as 7 mm");
+const traceRain=context.runValidation("AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 69900=",{p3:null,p24:null,rainOccurred:false});
+assert.equal(traceRain.decoded["Rainfall 69900"],"trace; tR=0","990 must decode as trace");
+const pointNineRain=context.runValidation("AAXX 01001 98327 11456 80000 10200 20100 40000 50000 333 69990=",{p3:null,p24:null,rainOccurred:false});
+assert.equal(pointNineRain.decoded["Rainfall 69990"],"0.9 mm; tR=0","999 must decode as 0.9 mm");
 
 const missed=`SIPH20 RPLC 212100 AAXX 21211 98327 32458 72001 10253 20238 39930 40102 55002 83108 333 56909 83820 87360=IC`;
 const missedResult=context.runValidation(missed,{p3:null,p24:null,rainOccurred:false});
@@ -89,12 +141,24 @@ const pressure3hExact=context.runValidation(pressure3h,{p3:1008.0,p24:null,rainO
 assert.ok(!pressure3hExact.issues.some(issue=>issue.title==="5appp amount does not match pressure history"),"exact 3-hour pressure change must pass");
 const pressure3hOffByTenth=context.runValidation(pressure3h,{p3:1008.1,p24:null,rainOccurred:false});
 assert.ok(pressure3hOffByTenth.issues.some(issue=>issue.title==="5appp amount does not match pressure history"),"0.1 hPa 3-hour mismatch must be an error");
+const pressure3hMissingHistory=context.runValidation(pressure3h);
+assert.ok(!pressure3hMissingHistory.issues.some(issue=>issue.title==="5appp amount does not match pressure history"),"missing 3-hour pressure history must not create a false mismatch");
+assert.ok(pressure3hMissingHistory.issues.some(issue=>issue.title==="Previous 3-hour MSLP required"),"missing 3-hour pressure history should request the needed value");
 
 const pressure24h=`SMPH20 RPLC 151200 AAXX 15121 98327 11462 72502 10260 20240 39924 40097 56019 69961 76098 84470 333 10342 56990 58002 84620 87360=JD/MP`;
 const pressure24hExact=context.runValidation(pressure24h,{p3:null,p24:1009.5,rainOccurred:false});
 assert.ok(!pressure24hExact.issues.some(issue=>issue.title==="24-hour pressure change mismatch"),"exact 24-hour pressure change must pass");
 const pressure24hOffByTenth=context.runValidation(pressure24h,{p3:null,p24:1009.6,rainOccurred:false});
 assert.ok(pressure24hOffByTenth.issues.some(issue=>issue.title==="24-hour pressure change mismatch"),"0.1 hPa 24-hour mismatch must be an error");
+const pressure24hMissingHistory=context.runValidation(pressure24h);
+assert.ok(!pressure24hMissingHistory.issues.some(issue=>issue.title==="24-hour pressure change mismatch"),"missing 24-hour pressure history must not create a false mismatch");
+assert.ok(pressure24hMissingHistory.issues.some(issue=>issue.title==="24-hour MSLP required"),"missing 24-hour pressure history should request the needed value");
+
+const wrongHeaderAtMain=context.runValidation(`SIPH20 RPLC 180000 AAXX 18001 98327 32401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(wrongHeaderAtMain.issues.some(issue=>issue.title==="Bulletin type mismatches main observation time"),"SIPH at a main hour must be rejected");
+
+const wrongHeaderAtIntermediate=context.runValidation(`SMPH20 RPLC 180300 AAXX 18031 98327 32401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(wrongHeaderAtIntermediate.issues.some(issue=>issue.title==="Bulletin type mismatches intermediate observation time"),"SMPH at an intermediate hour must be rejected");
 
 const baseHead=`SMPH20 RPLC 180000 AAXX 18001 98327`;
 const commonTail=`32401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`;
@@ -113,7 +177,10 @@ assert.ok(cloudArithmetic.issues.some(issue=>issue.title==="Individual cloud lay
 assert.ok(!cloudArithmetic.issues.some(issue=>issue.title==="Low-cloud amounts do not add up to Nh"),"individual low-cloud layers must not be summed to derive Nh");
 
 const duplicate=context.runValidation(`${baseHead} 11465 52401 10264 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
-assert.ok(duplicate.issues.some(issue=>issue.title==="Duplicate Section 1 group"&&issue.group==="10264"),"duplicate Section 1 groups must be detected");
+assert.ok(duplicate.issues.some(issue=>issue.title==="Duplicate air-temperature group"&&issue.group==="10264 10264"),"duplicate Section 1 groups must be detected by family");
+
+const competingTemperatures=context.runValidation(`SIPH20 RPLB 050300 AAXX 05031 98426 31568 32403 10313 10312 20256 30081 40103 58009 70500 83131 333 56999 83820=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(competingTemperatures.issues.some(issue=>issue.title==="Duplicate air-temperature group"&&issue.group==="10313 10312"),"different 1snTTT values must be detected as duplicate temperature groups");
 
 const warmTwoGroup=context.runValidation(`${baseHead} 11465 52401 10264 20265 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(warmTwoGroup.issues.some(issue=>issue.title==="2-group temperature exceeds air temperature"),"a 0.1 C warmer 2-group must be detected");
@@ -127,8 +194,6 @@ assert.ok(wrongTemperatureSchedule.issues.some(issue=>issue.title==="Maximum tem
 const badCloudDirection=context.runValidation(`${baseHead} 11465 52401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56999 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(badCloudDirection.issues.some(issue=>issue.title==="Middle-cloud direction conflicts with no cloud"),"56DDD must use 0 when CM=0");
 
-// CM is a type code, not the obscuring amount.  In this valid PAGASA case,
-// 88460 supplies Ns=8 Altostratus and 56999 correctly makes CH direction unknown.
 const validHighCloudObscuration=context.runValidation(`SIPH20 RPLC 272100 AAXX 27211 98327 32460 83501 10261 20242 39946 40119 53004 8211/ 333 56999 82820 88460=IC/JG`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(!validHighCloudObscuration.issues.some(issue=>issue.title==="High-cloud obscuration needs review"),"Ns=8 middle cloud must support CH=/ regardless of the CM type-code figure");
 
@@ -144,6 +209,12 @@ const weather40At2km=context.runValidation(`AAXX 01001 98327 11420 00000 10200 2
 assert.ok(!weather40At2km.issues.some(issue=>issue.title==="Visibility too high for present weather 40"),"2 km must be accepted for ww=40");
 const weather40Above2km=context.runValidation(`AAXX 01001 98327 11421 00000 10200 20100 40000 50000 74000=`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(weather40Above2km.issues.some(issue=>issue.title==="Visibility too high for present weather 40"),"visibility above 2 km must be rejected for ww=40");
+
+const combinedCuCb=context.runValidation(`SMPH20 RPLB 050600 AAXX 05061 98426 31459 62205 10314 20261 30056 40078 57025 71711 84963 333 56999 81918 83820 85080 94968=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!combinedCuCb.issues.some(issue=>issue.title==="Invalid CB nature in 949 group"||issue.title==="CB direction group missing"),"94968 must be accepted for isolated Cumulus and Cumulonimbus north of the station");
+
+const unrestrictedHaze=context.runValidation(`SIPH20 RPLB 050300 AAXX 05031 98426 31568 32403 10313 20256 30081 40103 58009 70500 83131 333 56999 83820=`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(!unrestrictedHaze.issues.some(issue=>issue.title==="Visibility too high for smoke, haze, or dust"),"ww=05 must not impose an absolute upper visibility limit");
 
 const zeroH24=context.runValidation(`${baseHead} 11465 52401 10264 20240 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 59000 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:1011.2,rainOccurred:false});
 assert.ok(zeroH24.issues.some(issue=>issue.title==="Zero 24-hour pressure change must use 58"),"zero 24-hour change must use 58000");
