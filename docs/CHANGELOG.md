@@ -11,6 +11,10 @@
 - Added correct RRR decoding: `60074` is 7 mm with `tR=4`; `990` is trace;
   and `991` through `999` represent 0.1 through 0.9 mm.
 - Added a mobile-friendly **Copy code** button.
+- Added Section 1 indicator-order validation, including a 2-group placed
+  before a 1-group.
+- Added detection of a second Nddff-shaped group after the mandatory wind
+  position, including the reported `70701 23602` case.
 
 ## v0.15.0 reviewed branch update
 

@@ -182,6 +182,12 @@ assert.ok(duplicate.issues.some(issue=>issue.title==="Duplicate air-temperature 
 const competingTemperatures=context.runValidation(`SIPH20 RPLB 050300 AAXX 05031 98426 31568 32403 10313 10312 20256 30081 40103 58009 70500 83131 333 56999 83820=`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(competingTemperatures.issues.some(issue=>issue.title==="Duplicate air-temperature group"&&issue.group==="10313 10312"),"different 1snTTT values must be detected as duplicate temperature groups");
 
+const jumbledSection1=context.runValidation(`SMPH20 RPLC 050000 AAXX 05001 98327 11465 80701 20249 10278 40115 51015 69944 76196 84908 333 20250 55076 56909 58000 70065 81710 81915 83820 88280 94948 90710 91112 91536 555 20021=MP`,{p3:1011.5,p24:1011.5,rainOccurred:true});
+assert.ok(jumbledSection1.issues.some(issue=>issue.title==="Section 1 groups are out of order"&&issue.detail.includes("10278")&&issue.detail.includes("20249")),"20249 before 10278 must be detected as a jumbled Section 1 sequence");
+
+const duplicateWind=context.runValidation(`SMPH20 RPLC 050000 AAXX 05001 98327 12465 70701 23602 10278 20249 39942 40115 51015 60074 81108 333 20250 55076 56909 59008 70065 81820 87280=MP`,{p3:null,p24:null,rainOccurred:false});
+assert.ok(duplicateWind.issues.some(issue=>issue.title==="Additional Nddff group detected"&&issue.group==="70701 23602"),"23602 after 70701 must be detected as an additional Nddff group");
+
 const warmTwoGroup=context.runValidation(`${baseHead} 11465 52401 10264 20265 39939 40112 53011 60164 70162 84901 333 20240 55066 56909 58014 70155 81915 83820 86080 94945 555 20002=JG/MP`,{p3:null,p24:null,rainOccurred:false});
 assert.ok(warmTwoGroup.issues.some(issue=>issue.title==="2-group temperature exceeds air temperature"),"a 0.1 C warmer 2-group must be detected");
 

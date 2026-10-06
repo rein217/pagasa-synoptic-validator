@@ -59,6 +59,26 @@ function duplicateSection1Families(groups){
   });
 }
 
+// Section 1 groups follow indicator order after iRixhVV and Nddff.
+function section1OrderRank(group){
+  const patterns=[
+    /^0\d{4}$/, /^1[01]\d{3}$/, /^2[019]\d{3}$/, /^3\d{4}$/,
+    /^4\d{4}$/, /^5[0-8]\d{3}$/, /^6[0-9\/]{4}$/,
+    /^7[0-9\/]{4}$/, /^8[0-9\/]{4}$/, /^9[0-9\/]{4}$/
+  ];
+  return patterns.findIndex(pattern=>pattern.test(group));
+}
+
+function extraWindGroupCandidate(group){
+  if(!/^[0-9]\d{4}$/.test(group)) return false;
+  const direction=Number(group.slice(1,3));
+  if(direction>36) return false;
+  // If a would-be 1/2 group has an impossible subtype but a valid dd,
+  // treat it as an additional Nddff candidate for operational review.
+  return (group[0]==="1"&&!/[01]/.test(group[1]))
+    ||(group[0]==="2"&&!/[019]/.test(group[1]));
+}
+
 function visibilityRangeKm(vv){
   const v=Number(vv); if(!/^\d{2}$/.test(vv)) return null;
   if(v===0) return [0,.1,"less than 0.1 km"];
@@ -240,6 +260,15 @@ function validate(raw, history={}) {
   p.sec1.forEach(g=>{if(g.length!==5||!/^[0-9\/]{5}$/.test(g)) addIssue(issues,"error","Invalid Section 1 group format","Each data group must contain five figures or solidi.",g);});
   const section1Data=p.sec1.slice(2);
   duplicateSection1Families(section1Data).forEach(duplicate=>addIssue(issues,"error",duplicate.title,`Section 1 contains more than one ${duplicate.name} group.`,duplicate.matches.join(" "),"Retain the correct observed value and remove the other entry."));
+  const rankedSection1=section1Data.map(group=>({group,rank:section1OrderRank(group)})).filter(item=>item.rank>=0);
+  for(let i=1;i<rankedSection1.length;i++){
+    const previous=rankedSection1[i-1],currentRanked=rankedSection1[i];
+    if(currentRanked.rank<previous.rank){
+      addIssue(issues,"error","Section 1 groups are out of order",`${currentRanked.group} is coded after ${previous.group}, but Section 1 groups must follow indicator order after iRixhVV and Nddff.`,section1Data.join(" "),`Move ${currentRanked.group} before ${previous.group}, then verify the complete Section 1 sequence.`);
+      break;
+    }
+  }
+  section1Data.filter(extraWindGroupCandidate).forEach(group=>addIssue(issues,"error","Additional Nddff group detected",`${group} has a valid Nddff wind direction (${group.slice(1,3)}) but appears after the mandatory Nddff position. Only one Nddff group is permitted.`,`${p.sec1[1]} ${group}`,`Retain the correct Nddff group and remove or correct ${group}.`));
   const tGroup=section1Data.find(g=>/^1[01]\d{3}$/.test(g));
   const tdGroup=section1Data.find(g=>/^2[01]\d{3}$/.test(g));
   const temp=tGroup?signedTemperature(tGroup):null, dew=tdGroup?signedTemperature(tdGroup):null;
