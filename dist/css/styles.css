@@ -17,3 +17,6 @@
 .alarm-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:14px 0}.alarm-toolbar .field-note{margin:0}
 .alarm-reminder{padding:18px;border:2px solid #b96706;background:#fff4dc;border-radius:12px;margin-bottom:16px}.alarm-reminder[hidden]{display:none}.alarm-reminder h2{margin:0 0 8px}
 #alarmDialog{max-width:530px;width:calc(100% - 32px);max-height:85vh;overflow:auto}#alarmDialog>label{display:block;margin:14px 0}#alarmDialog .check-row{display:flex}#alarmDialog input:not([type=checkbox]),#alarmDialog select{display:block;box-sizing:border-box;width:100%;padding:10px;border:1px solid #b7c7d1;border-radius:7px;margin-top:6px;background:white;color:#173345;font:inherit}
+
+/* Alarm controls span the grid; code and findings retain their two-column layout. */
+main > .alarm-toolbar, main > .alarm-reminder{grid-column:1 / -1}

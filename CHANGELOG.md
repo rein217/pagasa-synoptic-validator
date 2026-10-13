@@ -2,6 +2,8 @@
 
 ## v0.16.5 - observation alarm release (13 October 2026)
 
+Layout revision 2: alarm toolbar/reminder span the page grid; code stays on the left and findings on the right on desktop. CSS cache revision updated.
+
 Approved after review on the third Site. New configurable alarm is OFF by default.
 
 - Station selection, 1-120 minute delay (default 8), and main-only or all three-hourly schedule, in UTC.

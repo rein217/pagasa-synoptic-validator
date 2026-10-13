@@ -1,9 +1,10 @@
 {
   "version": "v0.16.5",
   "revision": "official observation alarm release",
-  "source_site_commit": "6a171d5031a66d1cf5b2f58d3c5b5ec19d55bc1b",
+  "source_site_commit": "54eb6d36262d6121e5461d2c8cc11423f2a633ae",
   "github_baseline_commit": "b90a4ca1541e44aa34846ba3838fba1e98424a28",
   "packaged_date_philippines": "2026-10-13",
   "entrypoint": "index.html",
-  "build_required": false
+  "build_required": false,
+  "layout_revision": 2
 }

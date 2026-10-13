@@ -43,3 +43,5 @@ All four suites passed for this package. A six-hour exact amount below a saved e
 Alarm is OFF by default. Open Alarm settings, enter the station, delay and schedule, select a sound, preview it, switch ON and save. Built-ins repeat every five seconds; uploaded MP3/WAV (up to 1 MB) repeats after playback. Dismiss, Snooze, OFF, or explicit Validate entry of the matching observation stops the reminder. Keep the page open and computer awake.
 
 See docs/RELEASE_v0.16.5.md and the current PDF. The package includes all v0.16.4 features, so a separate older upload is unnecessary. Saved pressure/rainfall records survive replacement of files when the GitHub Pages origin and browser storage stay the same. Alarm settings/audio are browser-local.
+
+Layout revision 2: alarm toolbar and reminder span the page grid, keeping code on the left and findings on the right on desktop.

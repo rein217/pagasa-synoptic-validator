@@ -72,3 +72,8 @@ assert.ok(html.includes('Ruleset v0.16.5'));assert.ok(html.includes('dist/js/ala
 assert.ok(!html.includes('Temporary third site'));assert.ok(!html.includes('Alarm review'));
 for(const match of source.matchAll(/\$\('([^']+)'\)/g))assert.ok(html.includes('id="'+match[1]+'"'),'missing element '+match[1]);
 console.log('Released-page alarm integration and cache URLs passed');
+
+const css=fs.readFileSync(new URL('../dist/css/styles.css',import.meta.url),'utf8');
+assert.match(css,/main > \.alarm-toolbar, main > \.alarm-reminder\{grid-column:1 \/ -1\}/);
+assert.ok(html.includes('css/styles.css?v=0.16.5-2'));
+console.log('Alarm toolbar and reminder span the grid; layout cache revision passed');
