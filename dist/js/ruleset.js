@@ -18,7 +18,8 @@ function addIssue(list, severity, title, detail, group = "", suggestion = "") {
 }
 function pressureValue(code) {
   const raw = Number(code.slice(1)) / 10;
-  return raw < 500 ? 1000 + raw : 900 + raw;
+  // The thousands digit is omitted. 9917 means 991.7 hPa, not 1891.7.
+  return raw < 500 ? 1000 + raw : raw;
 }
 function signedTemperature(group) {
   if (!/^[12][01]\d{3}$/.test(group)) return null;
@@ -201,6 +202,15 @@ function rainfallEvidenceFromParsed(p){
   return evidence;
 }
 
+// Auto-selection uses only the current reporting period, never the 24-hour total.
+function periodRainfallEvidenceFromParsed(p){
+  const hour=Number(p.yy.slice(2,4));if(!/^\d{5}$/.test(p.yy))return [];
+  if(hour===0)return p.sec5.filter(g=>/^2\d{4}$/.test(g)&&Number(g.slice(1))>0);
+  const main=[6,12,18].includes(hour),intermediate=[3,9,15,21].includes(hour);
+  if(!main&&!intermediate)return [];
+  return (main?p.sec1.slice(2):p.sec3).filter(g=>/^6\d{4}$/.test(g)&&g[4]===(main?'1':'7')&&Number(g.slice(1,4))>0);
+}
+
 function parseCode(raw) {
   const clean=raw.trim().replace(/\s+/g," ");
   const beforeSig=clean.split("=")[0].trim();
@@ -277,13 +287,25 @@ function validate(raw, history={}) {
   if(!tGroup) addIssue(issues,"error","Air-temperature group missing","No valid 1snTTT group was found.","","Include the air-temperature 1-group or verify a mistyped 2-group.");
   if(!tdGroup) addIssue(issues,"error","Dew-point group missing","No valid 2snTdTdTd group was found.","","Include the dew-point 2-group.");
   if(temp!==null&&dew!==null&&Math.round(dew*10)>Math.round(temp*10)) addIssue(issues,"error","2-group temperature exceeds air temperature",`The 2-group reports ${dew.toFixed(1)} °C, which is higher than the air temperature ${temp.toFixed(1)} °C.`,`${tGroup} ${tdGroup}`,"Verify the dry-bulb temperature and the dew-point/wet-bulb value.");
-  const currentGroup=section1Data.find(g=>/^4\d{4}$/.test(g));
-  const current=currentGroup?pressureValue(currentGroup):null;
-  if(current!==null){
-    decoded["Current MSLP"]=`${current.toFixed(1)} hPa`;
-    if(current<RULES.pressure.minimumMslp||current>RULES.pressure.maximumMslp) addIssue(issues,"error","MSLP outside the realistic surface range",`${currentGroup} decodes to ${current.toFixed(1)} hPa, outside the operational plausibility range ${RULES.pressure.minimumMslp.toFixed(1)}-${RULES.pressure.maximumMslp.toFixed(1)} hPa.`,currentGroup,"Check the 4PPPP figures and confirm that this is the mean sea-level pressure group.");
-  }
-  else addIssue(issues,"warning","MSLP group not found","A 4PPPP group is needed for pressure consistency checks.");
+  // Pressure quantities stay separate. Station configuration selects the basis.
+  const basis=RULES.pressure.stationBasis[p.station]||"mslp";
+  const basisLabel=basis==="stationPressure"?"station pressure":"MSLP";
+  const stationGroup=section1Data.find(g=>/^3\d{4}$/.test(g));
+  const stationPressure=stationGroup?pressureValue(stationGroup):null;
+  const mslpGroup=section1Data.find(g=>/^4\d{4}$/.test(g));
+  const mslp=mslpGroup?pressureValue(mslpGroup):null;
+  const observationHour=/^\d{5}$/.test(p.yy)?Number(p.yy.slice(2,4)):null;
+  if(stationPressure!==null){
+    decoded["Current station pressure"]=`${stationPressure.toFixed(1)} hPa`;
+    if(stationPressure<RULES.pressure.minimumStationPressure||stationPressure>RULES.pressure.maximumStationPressure) addIssue(issues,"error","Station pressure outside plausible range",`${stationGroup} decodes to ${stationPressure.toFixed(1)} hPa.`,stationGroup,"Check the station-pressure figures and instrument reading.");
+    const range=RULES.pressure.stationReviewRanges[p.station];
+    if(range&&(stationPressure<range[0]||stationPressure>range[1])) addIssue(issues,"warning","Station pressure needs review",`The value is outside the broad ${range[0]}–${range[1]} hPa review range configured for ${RULES.pressure.stationNames[p.station]}.`,stationGroup,"Confirm the pressure against the station record. These review limits account for elevation.");
+  }else if(RULES.schedule.mainHours.includes(observationHour)||basis==="stationPressure") addIssue(issues,"error","Station-pressure group missing or unusable","A usable Section 1 3P0P0P0P0 group is required for this report.",section1Data.find(g=>g.startsWith("3"))||"","Include the observed station pressure in the 3-group.");
+  if(mslp!==null){decoded["Current MSLP"]=`${mslp.toFixed(1)} hPa`;if(mslp<RULES.pressure.minimumMslp||mslp>RULES.pressure.maximumMslp)addIssue(issues,"error","MSLP outside the realistic surface range",`${mslpGroup} decodes to ${mslp.toFixed(1)} hPa.`,mslpGroup,"Check the 4PPPP figures and confirm the reduced MSLP.");}
+  else if(basis==="mslp")addIssue(issues,"warning","MSLP group not found","A 4PPPP group is needed for pressure consistency checks.");
+  const currentGroup=basis==="stationPressure"?stationGroup:mslpGroup;
+  const current=basis==="stationPressure"?stationPressure:mslp;
+  decoded["Pressure comparison basis"]=basisLabel;
   const tend=section1Data.find(g=>/^5[0-8]\d{3}$/.test(g));
   if(tend){
     const a=Number(tend[1]),codedTenths=Number(tend.slice(2)),amount=codedTenths/10;
@@ -295,9 +317,9 @@ function validate(raw, history={}) {
       const positive=deltaTenths>0, negative=deltaTenths<0, unchanged=deltaTenths===0;
       const allowedA=positive?[0,1,2,3]:negative?[5,6,7,8]:[0,4,5];
       const signOk=allowedA.includes(a);
-      if(codedTenths!==expectedTenths) addIssue(issues,"error","5appp amount does not match pressure history",`Current MSLP minus the 3-hour-earlier MSLP is ${delta>=0?"+":""}${delta.toFixed(1)} hPa, but ppp reports ${amount.toFixed(1)} hPa. The values must match exactly to 0.1 hPa.`,tend,`Use ppp=${String(expectedTenths).padStart(3,"0")}, after confirming the observations.`);
+      if(codedTenths!==expectedTenths) addIssue(issues,"error","5appp amount does not match pressure history",`Current ${basisLabel} minus the 3-hour-earlier ${basisLabel} is ${delta>=0?"+":""}${delta.toFixed(1)} hPa, but ppp reports ${amount.toFixed(1)} hPa. The values must match exactly to 0.1 hPa.`,tend,`Use ppp=${String(expectedTenths).padStart(3,"0")}, after confirming the observations.`);
       if(!signOk) addIssue(issues,"error","Pressure-tendency sign conflicts with a",`The pressure change is ${positive?"positive":negative?"negative":"zero"} (${delta>=0?"+":""}${delta.toFixed(1)} hPa). Code a=${a} is inconsistent with this category.`,tend,`Use an a value from ${allowedA.join(", ")}, selected from the observed pressure trace.`);
-    }else addIssue(issues,"warning","Previous 3-hour MSLP required","Enter the MSLP from three hours before to validate 5appp.",tend);
+    }else addIssue(issues,"warning",`Previous 3-hour ${basisLabel} required`,`Enter the ${basisLabel} from three hours before to validate 5appp.`,tend);
   }else addIssue(issues,"warning","5appp group not detected","The pressure-tendency group should be included whenever the three-hour tendency is available.");
   const ir=p.sec1[0]?.[0], ix=p.sec1[0]?.[1], rain1=section1Data.filter(g=>/^6[0-9\/]{4}$/.test(g)), rain3=p.sec3.filter(g=>/^6[0-9\/]{4}$/.test(g));
   const hour=/^\d{5}$/.test(p.yy)?Number(p.yy.slice(2,4)):null;
@@ -311,7 +333,7 @@ function validate(raw, history={}) {
   if(ir==="2"&&rain1.length>0) addIssue(issues,"error","Rainfall group in the wrong section","iR=2 requires the rainfall value in Section 3, not Section 1.",`${p.sec1[0]} ${rain1.join(" ")}`);
   if(ir&&["3","4"].includes(ir)&&(rain1.length>0||rain3.length>0)) addIssue(issues,"error","Precipitation group conflicts with iR","iR indicates omission from both Sections 1 and 3.",`${p.sec1[0]} ${[...rain1,...rain3].join(" ")}`);
   if(history.rainOccurred===true){
-    const reported=[...rain1,...rain3].some(g=>!/^6(?:000|\/{3})[0-9\/]$/.test(g));
+    const reported=periodRainfallEvidenceFromParsed(p).length>0;
     if(!reported) addIssue(issues,"error","Rainfall occurrence is not represented","Rainfall was marked as having occurred during the accumulation period, but no 6RRRtR group reports a measurable or trace amount.",p.sec1[0],"Check iR and include the rainfall group in the required section with the correct RRR and tR values.");
   }
 
@@ -546,18 +568,58 @@ function validate(raw, history={}) {
   }
 
   const h24=p.sec3.find(g=>/^5[89]\d{3}$/.test(g));
-  if(h24==="59000") addIssue(issues,"error","Zero 24-hour pressure change must use 58",`59000 uses the negative-change indicator for a zero change. Zero belongs in the 58 group.`,h24,"Change 59000 to 58000 after confirming the two MSLP values are equal.");
+  if(h24==="59000") addIssue(issues,"error","Zero 24-hour pressure change must use 58",`59000 uses the negative-change indicator for a zero change. Zero belongs in the 58 group.`,h24,"Change 59000 to 58000 after confirming the two pressure values are equal.");
   if(RULES.schedule.pressure24Hours.includes(hour)){
     const previous24h = history.p24;
-    if(previous24h == null || !Number.isFinite(previous24h)) addIssue(issues,"warning","24-hour MSLP required",`Enter the MSLP from 24 hours before to check the ${h24?h24:"58/59"} pressure-change group.` ,h24||"");
+    if(previous24h == null || !Number.isFinite(previous24h)) addIssue(issues,"warning",`24-hour ${basisLabel} required`,`Enter the ${basisLabel} from 24 hours before to check the ${h24?h24:"58/59"} pressure-change group.` ,h24||"");
     else if(current!==null&&h24){
       // The 58/59 group is coded in tenths; require an exact signed match at that precision.
       const deltaTenths=Math.round((current-previous24h)*10), encodedTenths=(h24[1]==="8"?1:-1)*Number(h24.slice(2));
       const delta=deltaTenths/10, encoded=encodedTenths/10;
-      if(deltaTenths!==encodedTenths) addIssue(issues,"error","24-hour pressure change mismatch",`Current MSLP minus the 24-hour-earlier value is ${delta>=0?"+":""}${delta.toFixed(1)} hPa, but ${h24} reports ${encoded>=0?"+":""}${encoded.toFixed(1)} hPa. The values must match exactly to 0.1 hPa.`,h24,`Use ${deltaTenths>=0?"58":"59"}${String(Math.abs(deltaTenths)).padStart(3,"0")}, after confirming both pressures.`);
+      if(deltaTenths!==encodedTenths) addIssue(issues,"error","24-hour pressure change mismatch",`Current ${basisLabel} minus the 24-hour-earlier value is ${delta>=0?"+":""}${delta.toFixed(1)} hPa, but ${h24} reports ${encoded>=0?"+":""}${encoded.toFixed(1)} hPa. The values must match exactly to 0.1 hPa.`,h24,`Use ${deltaTenths>=0?"58":"59"}${String(Math.abs(deltaTenths)).padStart(3,"0")}, after confirming both pressures.`);
     }else if(!h24) addIssue(issues,"warning","24-hour pressure-change group not found","A 58p24p24p24 or 59p24p24p24 group was not detected in Section 3.");
   }
 
+  // History evidence checks the matching period without changing the checkbox.
+  function occurrenceCheck(wet,group,label,tenths=false){if(!wet)return;if(group&&(/^6\d{4}$/.test(group)||tenths&&/^\d{5}$/.test(group))&&Number(tenths?group.slice(1):group.slice(1,4))===0)addIssue(issues,"error",`Saved rainfall conflicts with ${label} dry report`,"Saved records confirm measurable or trace rainfall within this accumulation period, but the report encodes zero.",group,"Review saved periods and report the observed rainfall amount or Trace.");else if(!group)addIssue(issues,"warning",`Saved ${label} rainfall needs review`,"Saved rainfall evidence exists, but no matching rainfall amount is available for comparison.",p.sec1[0],"Open Review rainfall and confirm the accumulation period and reporting group.");}
+  if([0,6,12,18].includes(hour))occurrenceCheck(history.savedWet6,hour===0?p.sec5.find(g=>/^2[\d/]{4}$/.test(g)):rain1.find(g=>/^6[\d/]{3}1$/.test(g)),"six-hour",hour===0);
+  if(hour===0){occurrenceCheck(history.savedWet24,rain1.find(g=>/^6[\d/]{3}4$/.test(g)),"24-hour");occurrenceCheck(history.savedWet24,p.sec3.find(g=>/^7[\d/]{4}$/.test(g)),"exact 24-hour",true);}
+  // Exact observer-entered rainfall is independent of the weather checkbox.
+  const exact3=history.rain3,exact6=history.rain6,exact24=history.rain24;
+  function checkExact(value,group,label,tenthsGroup=false){
+    if(!value||value.invalid||!group)return;
+    let expected;
+    if(tenthsGroup)expected=value.trace?"9999":String(Math.min(value.tenths,9998)).padStart(4,"0");
+    else expected=value.trace?"990":value.tenths<10?(value.tenths===0?"000":String(990+value.tenths)):String(Math.min(989,Math.round(value.tenths/10))).padStart(3,"0");
+    const actual=tenthsGroup?group.slice(1):group.slice(1,4);
+    // 989 in RRR denotes 989 mm or more. R24=9998 denotes 999.8 mm or more.
+    if(actual!==expected)addIssue(issues,"error",`${label} rainfall does not match exact entry`,`${group} differs from the confirmed ${value.trace?"trace":(value.tenths/10).toFixed(1)+" mm"} amount.`,group,`Expected ${tenthsGroup?group[0]+expected:"6"+expected+group[4]}, after confirming the measured amount.`);
+  }
+  // Compare exact amounts only: whole-millimetre SYNOP rounding is not a
+  // valid basis for rejecting a smaller coded numeral. Corrections stay possible.
+  if(mainHours.includes(hour)&&exact6&&!exact6.invalid){
+    const prior=(Array.isArray(history.savedRain3)?history.savedRain3:[]).filter(v=>v&&Number.isInteger(v.tenths)&&v.tenths>0&&Number.isFinite(v.time)).sort((a,b)=>b.tenths-a.tenths)[0];
+    if(prior&&(exact6.trace||(Number.isInteger(exact6.tenths)&&exact6.tenths<prior.tenths))){
+      const d=new Date(prior.time),end=`${d.toLocaleDateString('en-US',{timeZone:'UTC',month:'long',day:'numeric'})}, ${String(d.getUTCHours()).padStart(2,'0')}00 UTC`,group=hour===0?p.sec5.find(g=>/^2\d{4}$/.test(g)):rain1.find(g=>/^6\d{3}1$/.test(g));
+      addIssue(issues,"warning","Six-hour rainfall is lower than saved three-hour rainfall",`The exact six-hour amount (${exact6.trace?'Trace':(exact6.tenths/10).toFixed(1)+' mm'}) is lower than the saved three-hour amount of ${(prior.tenths/10).toFixed(1)} mm ending ${end}, within this six-hour period.`,group||'',"Review both exact rainfall entries. Correct the saved intermediate observation or the current six-hour amount if needed; do not add the three-hour amount again.");
+    }
+  }
+  if(exact6){
+    if(hour===0){const g=p.sec5.find(g=>/^2\d{4}$/.test(g));if(g)checkExact(exact6,g,"Six-hour",true);else addIssue(issues,"warning","Six-hour rainfall coding unavailable","The exact six-hour amount was entered, but no Section 5 2RRRR group can be compared.","555");}
+    else if([6,12,18].includes(hour)){const g=rain1.find(g=>/^6\d{3}1$/.test(g));if(g)checkExact(exact6,g,"Six-hour");else if(exact6.trace||exact6.tenths>0)addIssue(issues,"error","Six-hour rainfall group missing","Measured six-hour rain needs its scheduled rainfall group.",p.sec1[0]);}
+  }
+  if(exact3&&intermediateHours.includes(hour)){
+    const group=rain3.find(g=>/^6\d{3}7$/.test(g));
+    if(group)checkExact(exact3,group,"Three-hour");
+    else if(!exact3.invalid&&(exact3.trace||exact3.tenths>0))addIssue(issues,"error","Three-hour rainfall group missing","Measured rainfall during an intermediate observation's preceding three hours needs its Section 3 6RRR7 group.",p.sec1[0],"Confirm the exact amount and report it in Section 3 with tR=7.");
+  }
+  const sum24=history.rain24Sum;
+  if(hour===0&&exact24&&!exact24.invalid&&sum24&&(exact24.trace!==sum24.trace||exact24.tenths!==sum24.tenths))addIssue(issues,"error","Measured 24-hour total differs from six-hour sum","The entered 24-hour total and the four complete six-hour periods do not agree.","","Review the measured total and the four exact six-hour entries.");
+  if(hour===0&&exact24){
+    decoded["Confirmed 24-hour rainfall"]=exact24.trace?"Trace":`${(exact24.tenths/10).toFixed(1)} mm`;
+    const g=rain1.find(g=>/^6\d{3}4$/.test(g));if(g)checkExact(exact24,g,"24-hour");else if(exact24.trace||exact24.tenths>0)addIssue(issues,"error","24-hour rainfall group missing","A confirmed wet 24-hour period needs the scheduled 6RRR4 group.",p.sec1[0]);
+    const r24=p.sec3.find(g=>/^7\d{4}$/.test(g));if(r24)checkExact(exact24,r24,"24-hour",true);else addIssue(issues,"warning","Exact 24-hour rainfall group unavailable","No Section 3 7R24R24R24R24 group was found for the exact 24-hour comparison.","333");
+  }
   if(!issues.some(x=>x.severity==="error"||x.severity==="warning")) addIssue(issues,"ok","No coded errors detected",`The observation passed the checks currently implemented in ruleset ${RULES.version}.`);
   return {issues,decoded,p};
 }
@@ -567,5 +629,6 @@ window.SynopRuleset = Object.freeze({
   version: RULES.version,
   parseCode,
   validate,
+  periodRainfallEvidence(code){return periodRainfallEvidenceFromParsed(parseCode(code));},
   rainfallEvidence(code){return rainfallEvidenceFromParsed(parseCode(code));}
 });

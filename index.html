@@ -6,15 +6,18 @@
   <title>PAGASA SYNOP Code Validator</title>
   <meta name="description" content="Operational WMO FM 12 SYNOP code checks with pressure-history validation.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230b2d48'/%3E%3Cpath d='M10 36c8-12 15 12 23 0s15 12 22 0' fill='none' stroke='%235bd0e6' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M13 20h38' stroke='%23fff' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="dist/css/styles.css?v=0.15.0-structure-fix">
+  <link rel="stylesheet" href="dist/css/styles.css?v=0.16.5-1">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="mark" aria-hidden="true">≋</span><div><strong>PAGASA SYNOP Validator</strong><small>WMO FM 12 · operational draft</small></div></div>
-    <a class="status-pill status-link" href="ruleset.html" aria-label="Open and download Ruleset v0.15.0">Ruleset v0.15.0</a>
+    <div class="brand"><span class="mark" aria-hidden="true">≋</span><div><strong>PAGASA SYNOP Validator</strong><small>WMO FM 12 · PAGASA practices</small></div></div>
+    <a class="status-pill status-link" href="ruleset.html" aria-label="Open and download Ruleset v0.16.5">Ruleset v0.16.5</a>
   </header>
 
   <main>
+    <div class="alarm-toolbar"><button id="alarmSettings" class="button ghost" type="button">Alarm OFF · Settings</button><span id="alarmStatus" class="field-note" role="status"></span></div>
+    <section id="alarmReminder" class="alarm-reminder" role="alert" hidden><h2 id="alarmReminderTitle">Observation reminder</h2><p id="alarmReminderText"></p><p id="alarmSoundStatus" class="field-note"></p><div class="actions"><button id="alarmDismiss" class="button primary" type="button">Dismiss</button><button id="alarmSnooze" class="button ghost" type="button">Snooze 5 minutes</button></div></section>
+    <dialog id="alarmDialog" aria-labelledby="alarmDialogTitle"><h2 id="alarmDialogTitle">Observation alarm</h2><p class="field-note">Reminder for an observation not yet entered through Validate. This checks entry, not transmission to communications.</p><label class="check-row"><input id="alarmEnabled" type="checkbox">Alarm ON</label><label>Station number<input id="alarmStation" type="text" inputmode="numeric" maxlength="5" placeholder="e.g. 98327"></label><label>Minutes after observation time<input id="alarmDelay" type="number" min="1" max="120" step="1" value="8"></label><label>Observation schedule<select id="alarmSchedule"><option value="all">All 3-hourly observations</option><option value="main">Main only: 0000, 0600, 1200, 1800 UTC</option></select></label><label>Alarm sound<select id="alarmSound"><option value="urgent">Urgent beeps (default)</option><option value="ring">Ringing alarm</option><option value="chime">Chime</option><option value="custom">My uploaded sound</option></select></label><label>Upload your own sound<input id="alarmSoundFile" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"></label><p id="alarmCustomName" class="field-note">No custom sound saved.</p><p class="field-note">MP3 or WAV, up to 1 MB. Stored only in this browser; files are not sent to the site owner. Uploaded sounds play up to 30 seconds per repeat.</p><button id="alarmRemoveSound" class="text-button" type="button">Remove uploaded sound</button><p class="field-note">Keep this page open and the computer awake. Background tabs can delay reminders. Built-in sounds repeat every 5 seconds; uploaded sounds repeat after playback. Use Preview sound and check your device volume. Settings and entered observations are saved only in this browser on this site.</p><p class="field-note">On first activation or after changing station/schedule/delay, reminders start with the next deadline. Previous overdue observations are not replayed.</p><p id="alarmSettingsStatus" role="status"></p><div class="actions"><button id="alarmTest" class="button ghost" type="button">Preview sound</button><button id="alarmStopPreview" class="button ghost" type="button">Stop preview</button><button id="alarmSave" class="button primary" type="button">Save settings</button><button id="alarmClose" class="button ghost" type="button">Cancel</button></div></dialog>
     <section class="workspace" aria-labelledby="workspace-title">
       <div class="section-heading">
         <div><p class="eyebrow">CODE CHECK</p><h1 id="workspace-title">Validate one surface observation</h1></div>
@@ -22,21 +25,37 @@
       </div>
 
       <div class="input-label-row"><label for="synopCode">Complete bulletin or SYNOP observation.</label><button id="copyCode" class="text-button" type="button">Copy code</button></div>
-      <textarea id="synopCode" spellcheck="false" placeholder="Paste SMPH20 RPLC… AAXX… ="></textarea>
+      <div class="code-editor"><pre id="codeHighlights" aria-hidden="true"></pre><textarea id="synopCode" spellcheck="false" placeholder="Paste SMPH20 RPLC… AAXX… =" aria-describedby="highlightHelp"></textarea></div>
+      <p id="highlightHelp" class="field-note">After validation, red marks errors and amber marks warnings inside the input. Tap a finding to select its affected code. Missing groups are explained in the findings.</p>
+      <label class="date-label">Observation date (UTC)<input id="obsDate" type="date"></label><p class="field-note">Check the month and year before saving history. The day must match AAXX.</p>
       <p id="copyStatus" class="copy-status" role="status" aria-live="polite" hidden></p>
 
       <div class="pressure-card">
-        <div class="pressure-title"><div><h2>Pressure history</h2><p>Enter the MSLP from three hours earlier to verify <code>5appp</code>.</p></div><span id="obsTimeBadge" class="time-badge">Time not detected</span></div>
+        <div class="pressure-title"><div><h2>Pressure history</h2><p><span id="pressureBasisText">Enter the MSLP from three hours earlier to verify 5appp.</span></p></div><span id="obsTimeBadge" class="time-badge">Time not detected</span></div>
         <div class="pressure-grid">
-          <label>3 hours before (hPa)<input id="p3" inputmode="decimal" type="number" step="0.1" placeholder="e.g. 1011.6"></label>
-          <label id="p24Wrap" class="conditional">24 hours before (hPa)<input id="p24" inputmode="decimal" type="number" step="0.1" placeholder="Required at 00/12 UTC"></label>
+          <label><span id="p3Label">3 hours before, MSLP (hPa)</span><input id="p3" inputmode="decimal" type="number" step="0.1" placeholder="e.g. 1011.6"></label>
+          <label id="p24Wrap" class="conditional"><span id="p24Label">24 hours before, MSLP (hPa)</span><input id="p24" inputmode="decimal" type="number" step="0.1" placeholder="Required at 00/12 UTC"></label>
         </div>
-        <p class="field-note">Structurally valid MSLP readings are retained for 36 hours in this browser and matched by station and SYNOP day/hour. You can edit an autofilled value. The history is not shared with another browser or device. Since the time group has no month or year, automatic matching is skipped when it would cross into an unknown month.</p>
-        <label class="check-row"><input id="rainOccurred" type="checkbox"> Rainfall occurred during the previous 6 hours</label>
-        <p class="field-note">Select this manually only when rainfall occurred during the six hours immediately before observation. A longer-duration rainfall group, such as a 24-hour total at 00 UTC, will not select it automatically. The box resets when a different observation is entered.</p>
+        <p class="field-note">Pressure readings stay in this browser for 36 hours after saving. Tayabas (98427) and Tanay (98433) use station pressure for both differences. Other stations use MSLP. Review autofilled values before validating.</p>
+        <label class="check-row"><input id="rainOccurred" type="checkbox"><span id="rainOccurredLabel">Rainfall occurred during the previous 6 hours</span></label>
+        <label id="rain6Wrap" class="exact-rain-input" hidden><span id="rainAmountLabel">Exact rainfall during the previous 6 hours (mm)</span><input id="rain6" type="text" inputmode="decimal" placeholder="e.g. 0.5, 7.0, T or Trace"></label>
+        <p id="rainPeriodNote" class="field-note">Matching 3- or 6-hour rainfall selects the checkbox automatically. A 24-hour total alone does not. You can change the selection; T and Trace are accepted.</p>
         <p class="field-note">The 3-hour difference checks the sign category of <code>a</code> and the magnitude in <code>ppp</code>. At 00 and 12 UTC, the 24-hour value checks the Section 3 <code>58/59</code> group.</p>
       </div>
 
+      <section id="rainCard" class="rain-card" hidden>
+        <button id="openRainReview" class="button ghost" type="button">Review rainfall / saved records</button>
+        <p id="historyStatus" role="status" class="field-note"></p>
+      </section>
+      <dialog id="rainDialog" aria-labelledby="rainDialogTitle">
+        <h2 id="rainDialogTitle">Rainfall review</h2><p id="rainDayLabel" class="field-note"></p>
+        <section id="rainReview"><p class="field-note">Review exact six-hour totals. Missing is not zero. Intermediate rainfall is supporting evidence and is not added again.</p>
+          <div id="rainRows"></div><p id="rainTotal" class="rain-total" role="status"></p>
+          <label id="rain24Wrap">Measured 24-hour total, if needed (mm)<input id="rain24" type="text" inputmode="decimal" placeholder="Optional: confirmed total or Trace"></label>
+          <p class="field-note">Saved locally for 8 days. Mixed trace and measurable rain needs a confirmed 24-hour total. Save and close, then validate the observation.</p>
+        </section><p id="rainPopupStatus" role="status"></p>
+        <div class="actions"><button id="saveRainReview" class="button primary" type="button">Save and close</button><button id="closeRainReview" class="button ghost" type="button">Close</button></div>
+      </dialog>
       <div class="actions"><button id="validate" class="button primary" type="button">Validate observation</button><button id="clear" class="button ghost" type="button">Clear</button><button id="reportIssue" class="button ghost" type="button">Report checker issue</button></div>
       <p id="emailStatus" class="email-status" role="status" aria-live="polite" hidden></p>
     </section>
@@ -46,10 +65,12 @@
     </section>
   </main>
 
-  <footer>Rules derived from WMO FM 12 and PAGASA's amended guidelines on surface synoptic observation. Continue operational review before formal adoption.</footer>
+  <footer>Rules derived from WMO FM 12 and PAGASA's amended guidelines on surface synoptic observation. Confirm observations against current station records before transmission.</footer>
   <!-- Load order matters: editable settings, rule engine, then page controls. -->
-  <script src="dist/js/ruleset-config.js?v=0.15.0-structure-fix"></script>
-  <script src="dist/js/ruleset.js?v=0.15.0-structure-fix"></script>
-  <script src="dist/js/app.js?v=0.15.0-structure-fix"></script>
+  <script src="dist/js/ruleset-config.js?v=0.16.5-1"></script>
+  <script src="dist/js/ruleset.js?v=0.16.5-1"></script>
+  <script src="dist/js/history.js?v=0.16.5-1"></script>
+  <script src="dist/js/app.js?v=0.16.5-1"></script>
+  <script src="dist/js/alarm.js?v=0.16.5-1"></script>
 </body>
 </html>

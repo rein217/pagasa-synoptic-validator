@@ -3,28 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ruleset v0.15.0 - PAGASA SYNOP Validator</title>
+  <title>Ruleset v0.16.5 - PAGASA SYNOP Validator</title>
   <meta name="description" content="View and download the current PAGASA SYNOP Validator ruleset.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230b2d48'/%3E%3Cpath d='M10 36c8-12 15 12 23 0s15 12 22 0' fill='none' stroke='%235bd0e6' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M13 20h38' stroke='%23fff' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="dist/css/styles.css?v=0.14.2">
+  <link rel="stylesheet" href="dist/css/styles.css?v=0.16.5-1">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="mark" aria-hidden="true">≋</span><div><strong>PAGASA SYNOP Validator</strong><small>WMO FM 12 · operational draft</small></div></a>
+    <a class="brand" href="index.html"><span class="mark" aria-hidden="true">≋</span><div><strong>PAGASA SYNOP Validator</strong><small>WMO FM 12 · PAGASA practices</small></div></a>
     <a class="status-pill status-link" href="index.html">Back to validator</a>
   </header>
 
   <main class="rules-main">
     <section class="rules-card" aria-labelledby="rules-title">
       <div class="rules-head">
-        <div><p class="eyebrow">CURRENT DOCUMENT</p><h1 id="rules-title">Ruleset v0.15.0</h1><p>Review the implemented PAGASA and WMO checks, examples, limitations, and version history.</p></div>
-        <div class="rules-actions"><a class="button ghost" href="index.html">Back to validator</a><a class="button primary" href="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf" download>Download PDF</a></div>
+        <div><p class="eyebrow">CURRENT DOCUMENT</p><h1 id="rules-title">Ruleset v0.16.5</h1><p>Current rules for the released validator, including pressure history, rainfall cross-checks and code highlights. The PDF includes alarm instructions, the v0.16.4 update announcement, and retained validation rules.</p></div>
+        <div class="rules-actions"><a class="button ghost" href="index.html">Back to validator</a><a class="button primary" href="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.16.5.pdf" download>Download PDF</a></div>
       </div>
-      <object class="pdf-frame" data="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf" type="application/pdf">
-        <div class="pdf-fallback"><p>Your browser cannot display the PDF inside this page.</p><a class="button primary" href="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf" download>Download Ruleset PDF</a></div>
+      <object class="pdf-frame" data="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.16.5.pdf" type="application/pdf">
+        <div class="pdf-fallback"><p>Your browser cannot display the PDF inside this page.</p><a class="button primary" href="dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.16.5.pdf" download>Download Ruleset PDF</a></div>
       </object>
     </section>
-  </main>
-  <footer>Ruleset v0.15.0 - operational review document.</footer>
+  <section><h2>v0.16.5: observation alarm</h2><p>Open Alarm settings to select a station, delay and schedule, then choose a built-in sound or upload an MP3/WAV up to 1 MB. Preview the sound and Save settings. Alarm is OFF by default. A reminder means no matching Validate entry was recorded, including reports with findings. Keep the page open and the computer awake.</p><h2>Carried forward from v0.16.4</h2><p>If an exact six-hour amount is below a saved exact intermediate three-hour amount within that period at the same station, the validator gives a warning asking you to review both entries. It compares exact amounts, not rounded rainfall codes. Three-hour amounts are never added again to the six-hour total.</p><p>The exact rainfall field appears directly below the checkbox only when checked. Matching current-period rainfall auto-selects it: intermediate Section 3 6RRR7; main 06/12/18 UTC Section 1 6RRR1; 00 UTC Section 5 2RRRR for 18-24 UTC. 24-hour totals do not select it. Manual overrides persist while matching groups are unchanged. T and Trace are accepted. Both captions use 3 hours for intermediate reports and 6 hours for main reports. Exact intermediate amounts are stored separately and checked against Section 3 6RRR7 without adding them again to six-hour totals. Saved rainfall review opens in a popup. At 00 UTC it shows the preceding UTC day; otherwise it shows the current day so far. Exact six-hour amounts are summed once. Intermediate rainfall evidence is saved separately and checks the next matching main report and 00 UTC total without selecting the weather checkbox. Missing amounts remain missing; incomplete records cannot verify a total. The downloadable PDF includes the current updates and retained baseline rules.</p></section></main>
+  <footer>Ruleset v0.16.5 - released ruleset.</footer>
 </body>
 </html>

@@ -13,11 +13,18 @@
 
 window.SYNOP_RULESET_CONFIG = Object.freeze({
   // Displayed in the page header and successful validation message.
-  version: "v0.15.0",
+  version: "v0.16.5",
 
   // Operational pressure limits in hectopascals.
   pressure: {
     minimumMslp: 870.0,
+    minimumStationPressure: 500.0,
+    maximumStationPressure: 1100.0,
+    // Practices supplied by the station reviewer. Both differences use this basis.
+    stationBasis: {"98427": "stationPressure", "98433": "stationPressure"},
+    stationNames: {"98427": "Tayabas", "98433": "Tanay"},
+    // Broad elevation-aware review ranges, not instrument calibration limits.
+    stationReviewRanges: {"98427": [850,1085], "98433": [800,1020]},
     maximumMslp: 1085.0,
     exactComparisonTenths: true
   },

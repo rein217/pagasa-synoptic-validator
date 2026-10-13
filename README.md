@@ -1,79 +1,45 @@
-# PAGASA SYNOP Validator v0.15.0
+# PAGASA SYNOP Validator v0.16.5
 
-Static WMO FM 12 SYNOP validator using PAGASA operational practices and the
-2023 amended guidelines on surface synoptic observation.
+GitHub Pages package of the released ChatGPT Site, including the configurable observation alarm and all changes since v0.15. Based on GitHub main b90a4ca1541e44aa34846ba3838fba1e98424a28, then the review updates described in CHANGELOG.md.
 
-Version 0.15.0 retains the **Report checker issue** button. It opens an editable
-email draft addressed to `renieragas@gmail.com` containing the entered SYNOP
-code and the validator findings. The webpage does not automatically send or
-store the report. This version uses a shorter email link and copies the draft
-as a fallback when the device has no default email application.
+## Start here
 
-This release also adds main/intermediate bulletin checks, 36-hour browser-local
-MSLP history, conservative rainfall autofill, semantic duplicate-group checks,
-and the reviewed visibility and CB rules described in `docs/CHANGELOG.md`.
+Released 13 October 2026 after user review. Read `docs/RELEASE_v0.16.5.md` and `UPLOAD_TO_GITHUB.md`. Upload the contents of this package into the repository root. `index.html` and `ruleset.html` belong beside `dist/`, not inside another package folder.
 
-## Required website files
+This static site needs no installation or build step. GitHub Pages can serve main / (root). For local use, open index.html or use any static web server. No user data is included in this package.
 
-Keep the entry pages at the repository root and group the static assets under the distribution folders:
+## Current features
 
-- `index.html`
-- `ruleset.html`
-- `dist/css/styles.css`
-- `dist/js/app.js`
-- `dist/js/ruleset-config.js`
-- `dist/js/ruleset.js`
-- `dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf`
+- Separated, commented rule configuration and validation engine.
+- Input highlights; Copy code and email issue-report controls.
+- Tayabas/Tanay station-pressure comparison and history; other stations use MSLP.
+- Exact 3-hour and 24-hour pressure changes; missing history does not become a false mismatch.
+- Full UTC observation date; 36-hour pressure and 8-day rainfall history in the current browser.
+- Rainfall checkbox captions: 3 hours for intermediate reports, 6 hours for main reports.
+- Exact rainfall appears below the checkbox only while checked; T and Trace are accepted.
+- Auto-selection only for matching current-period rainfall. At 00 UTC this uses Section 5 2RRRR for 18-24 UTC, never a 24-hour total alone. Manual overrides remain available.
+- Separate exact intermediate rainfall, saved occurrence evidence, six-hour records and four-period 24-hour review popup.
+- Readable UTC periods such as October 15, 0000–0600 UTC; both dates are shown at midnight crossings.
+- Preserved cloud, CB 949 codes 4-7, weather/visibility, gust, duplicate and group-order checks.
+- Clickable ruleset with the current v0.16.5 PDF in dist/pdf/.
 
-The documentation and `tests` folder are recommended but are not required for
-the webpage to load.
+## Files and checks
 
-## File responsibilities
-
-- `dist/js/ruleset-config.js` contains the beginner-editable operational settings.
-- `dist/js/ruleset.js` contains parsing and meteorological validation logic.
-- `dist/js/app.js` contains webpage controls and result rendering.
-- `index.html` loads the files in the required order.
-- `dist/css/styles.css` contains the first site's visual design.
-- `ruleset.html` displays the current ruleset and provides the PDF download.
-
-## Test before publishing
+`dist/js/ruleset-config.js` contains settings; `ruleset.js` contains the rule engine; `history.js` contains local history; `app.js` contains page controls. See RULESET_GUIDE.md.
 
 With Node.js installed, run:
 
-```bash
+```
 node tests/ruleset-regression.test.mjs
+node tests/review-features.test.mjs
+node tests/cloud-regression.test.mjs
+node tests/alarm.test.mjs
 ```
 
-Expected result:
+All four suites passed for this package. A six-hour exact amount below a saved exact three-hour amount in the same period gives a warning to review both entries. Browser visual QA was unavailable. Browser history is separate for each site origin; records from the ChatGPT Site do not automatically appear on GitHub Pages. Monthly accumulation and backup import/export are not yet implemented.
 
-```text
-cloud, pressure, and additional-error regression checks passed
-```
+## New observation alarm
 
-## Update an existing GitHub repository
+Alarm is OFF by default. Open Alarm settings, enter the station, delay and schedule, select a sound, preview it, switch ON and save. Built-ins repeat every five seconds; uploaded MP3/WAV (up to 1 MB) repeats after playback. Dismiss, Snooze, OFF, or explicit Validate entry of the matching observation stops the reminder. Keep the page open and computer awake.
 
-1. Open the repository on GitHub.
-2. Select **Add file → Upload files**.
-3. Upload all files and folders from this package. Keep `index.html` in the
-   repository root, not inside another folder.
-4. When GitHub asks about files with the same name, allow the new files to
-   replace the older versions.
-5. Enter a commit message such as `Review and update v0.15.0`.
-6. While reviewing, commit to the existing `v0.15.0` branch. Do not merge it
-   into `main` until its branch preview and regression tests are approved.
-7. Open a pull request from `v0.15.0` to `main`, review the listed changes, and
-   merge only after operational acceptance.
-
-## GitHub Pages settings
-
-Under **Settings → Pages**, use:
-
-- Source: **Deploy from a branch**
-- Branch: **main**
-- Folder: **/(root)**
-
-After saving, GitHub normally needs a few minutes to publish the update.
-
-This remains an operational review build and should continue to be checked
-against official WMO and PAGASA documentation.
+See docs/RELEASE_v0.16.5.md and the current PDF. The package includes all v0.16.4 features, so a separate older upload is unnecessary. Saved pressure/rainfall records survive replacement of files when the GitHub Pages origin and browser storage stay the same. Alarm settings/audio are browser-local.

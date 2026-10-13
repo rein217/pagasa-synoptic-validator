@@ -1,70 +1,17 @@
-# Beginner guide to the separated ruleset
+# Ruleset editing guide
 
-The website is divided into three JavaScript files so that operational rules can be reviewed without touching the page controls.
+Current version: v0.16.5, including readable UTC rainfall labels.
 
-## 1. `dist/ruleset-config.js`
+- `dist/js/ruleset-config.js`: version, schedules, pressure basis and configurable values.
+- `dist/js/ruleset.js`: parsing, meteorological checks and current-period rainfall evidence.
+- `dist/js/history.js`: browser-local storage, dates, measured amounts and retention.
+- `dist/js/app.js`: page controls, highlights, captions and rainfall popup.
+- `dist/css/styles.css`: appearance.
 
-Start here for routine policy changes. It contains readable settings for:
+Each JavaScript file includes comments explaining its role and batches of logic. Keep meteorological decisions in the ruleset rather than the page controller.
 
-- ruleset version;
-- realistic MSLP limits;
-- main and intermediate observation hours;
-- 00/12 UTC pressure checks;
-- cloud-level boundaries;
-- the 1-3-5 cloud-layer thresholds;
-- maximum reportable-cloud groups;
-- CB nature codes; and
-- the extended monthly-rainfall threshold and schedule.
+When changing a rule, add an operational example to the regression tests, update the version and asset cache suffix, and revise the ruleset PDF and HTML. The current PDF includes chronological addenda; the newest addendum takes precedence.
 
-Example: changing the maximum realistic MSLP from `1085.0` to `1080.0` requires changing only:
+Exact input is below the checkbox and appears only while checked. Main reports use six hours, intermediates three hours. Matching current-period rainfall auto-selects the checkbox; a 24-hour total alone does not. T and Trace are accepted. Three-hour exact values remain separate from six-hour totals.
 
-```js
-maximumMslp: 1080.0
-```
-
-## 2. `dist/ruleset.js`
-
-This contains the meteorological logic. Each batch has a comment describing its purpose. Edit this file only when the actual logic changes—for example, when a new relationship between two coded groups must be checked.
-
-The file exports only:
-
-- `SynopRuleset.parseCode()`
-- `SynopRuleset.validate()`
-- `SynopRuleset.version`
-
-## 3. `dist/app.js`
-
-This controls the visible webpage:
-
-- buttons;
-- pressure-history fields;
-- rainfall checkbox;
-- display of decoded information; and
-- error/warning cards.
-
-Changing an operational meteorological rule should normally not require editing this file.
-
-## Safe editing workflow
-
-1. Make one rule change at a time.
-2. Update the version in `ruleset-config.js`.
-3. Run `node tests/ruleset-regression.test.mjs`.
-4. Test known correct and known incorrect observations.
-5. Record the reason and example in `CHANGELOG.md`.
-6. Upload the changed file to GitHub and commit it.
-
-Keep the previous working version available so a change can be reversed if testing finds a problem.
-
-## PAGASA cloud-layer interpretation added in v0.14
-
-Do not add individual Section 3 cloud-layer amounts to derive `Nh`. Each `Ns`
-is estimated as if the other layers did not exist, so layers may overlap. Check
-that an individual low-cloud `Ns` does not exceed `Nh`, but allow, for example,
-`Nh=5` with 3 oktas Cumulus and 4 oktas Stratocumulus.
-
-For sky state:
-
-- `N=0`: omit the main cloud group and Section 3 cloud groups;
-- `N=9`: omit the main cloud group and report `89/hshs`, where `hshs` is
-  vertical visibility; and
-- `N=/`: omit the main cloud group and Section 3 cloud groups.
+- `dist/js/alarm.js`: separate nonmeteorological observation reminders, audio and alarm settings. The alarm never changes findings in the validation engine.

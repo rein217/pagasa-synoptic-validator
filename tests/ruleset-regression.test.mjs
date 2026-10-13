@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const element=()=>({value:"",checked:false,textContent:"",innerHTML:"",dataset:{},listeners:{},addEventListener(name,handler){this.listeners[name]=handler;},dispatch(name){this.listeners[name]?.({currentTarget:this});},classList:{toggle(){}}});
+const element=()=>({showModal(){this.open=true;},close(){this.open=false;},value:"",checked:false,textContent:"",innerHTML:"",dataset:{},style:{},clientWidth:500,listeners:{},addEventListener(name,handler){this.listeners[name]=handler;},dispatch(name){this.listeners[name]?.({currentTarget:this});},classList:{toggle(){}}});
 const elements=new Map();
 const context={console,document:{getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},modelContext:null}};
 const localStorageValues=new Map();
 context.localStorage={getItem(key){return localStorageValues.get(key)??null;},setItem(key,value){localStorageValues.set(key,value);}};
+context.CustomEvent=class {constructor(type,options){this.type=type;this.detail=options.detail;}};
+context.dispatchEvent=()=>true;
 context.window=context;
 vm.createContext(context);
 const configSource=fs.readFileSync(new URL("../dist/js/ruleset-config.js",import.meta.url),"utf8");
@@ -18,16 +20,17 @@ vm.runInContext(`${configSource}\n${rulesetSource}\nglobalThis.runValidation=Syn
 const pageSource=fs.readFileSync(new URL("../dist/js/app.js",import.meta.url),"utf8");
 assert.ok(rulesetSource.includes("MSLP outside the realistic surface range"));
 assert.ok(!pageSource.includes("MSLP outside the realistic surface range"));
-assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.15.0");
+assert.equal(context.SYNOP_RULESET_CONFIG.version,"v0.16.5");
 assert.ok(pageSource.includes("renieragas@gmail.com"),"feedback email must be addressed to the designated reviewer");
 assert.ok(pageSource.includes('document.createElement("a")'),"feedback must launch through an actual mail link");
 const indexSource=fs.readFileSync(new URL("../index.html",import.meta.url),"utf8");
 const rulesPageSource=fs.readFileSync(new URL("../ruleset.html",import.meta.url),"utf8");
 assert.ok(indexSource.includes('href="ruleset.html"'),"ruleset version badge must open the ruleset page");
-assert.ok(rulesPageSource.includes("dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.15.0.pdf"),"ruleset page must show and download the current PDF");
+assert.ok(rulesPageSource.includes("dist/pdf/PAGASA_SYNOP_Validator_Ruleset_v0.16.5.pdf"),"ruleset page must show and download the current PDF");
 
 // Browser-load guard: load app.js after the ruleset as separate classic
 // scripts. This catches global-name collisions that a syntax check misses.
+vm.runInContext(fs.readFileSync(new URL("../dist/js/history.js",import.meta.url),"utf8"),context,{filename:"history.js"});
 vm.runInContext(pageSource,context,{filename:"app.js"});
 
 const pressureHistoryKey="pagasaSynopMslpHistoryV1";
@@ -50,14 +53,14 @@ p3Input.value="1007.0";
 p3Input.dispatch("input");
 synopInput.value="AAXX 17131 98327 11462 72502 10260 20240 39924 40107 56019 333";
 synopInput.dispatch("input");
-assert.equal(p3Input.value,"1007.0","manual pressure entries must not be overwritten by autofill");
+assert.equal(p3Input.value,"","a different observation clears the old manual pressure value");
 
 synopInput.value="AAXX 01001 98327 11462 72502 10260 20240 39924 40107 56019 333";
 synopInput.dispatch("input");
 assert.equal(p24Input.value,"","24-hour history must not guess across an unknown month boundary");
 context.document.getElementById("validate").dispatch("click");
-const savedEntries=JSON.parse(localStorageValues.get(pressureHistoryKey));
-assert.ok(savedEntries.some(entry=>entry.station==="98327"&&entry.day===1&&entry.hour===0&&entry.mslp===1010.7),"validation should save the decoded current MSLP locally");
+const savedEntries=JSON.parse(localStorageValues.get("pagasaSynopObservationHistoryV2"));
+assert.ok(savedEntries.some(entry=>entry.station==="98327"&&new Date(entry.time).getUTCDate()===1&&new Date(entry.time).getUTCHours()===0&&entry.mslp===1010.7),"validation should save the decoded current MSLP locally");
 
 const rainBox=context.document.getElementById("rainOccurred");
 rainBox.checked=true;
@@ -229,3 +232,48 @@ const lateMonthlyRain=context.runValidation(`${baseHead} 11465 52401 10264 20240
 assert.ok(lateMonthlyRain.issues.some(issue=>issue.title==="Section 5 monthly-rainfall group at the wrong time"),"Section 5 6RRRR must be day 1 at 00 UTC");
 
 console.log("cloud, pressure, and additional-error regression checks passed");
+
+// Test the real controller button flow with controlled DOM fields.
+synopInput.value="SIPH20 RPLC 100900 AAXX 10091 98327 32460 83501 10261 20242 39946 40119 53004 8211/ 333 56999 82820 88460=";
+synopInput.dispatch("input");context.document.getElementById("obsDate").value="2026-10-10";context.document.getElementById("obsDate").dispatch("change");
+context.document.getElementById("openRainReview").dispatch("click");assert.equal(context.document.getElementById("rainDialog").open,true);
+context.document.getElementById("rainPeriod0").value="7.0";
+context.document.getElementById("saveRainReview").dispatch("click");assert.equal(context.document.getElementById("rainDialog").open,false);
+assert.equal(context.SynopHistory.find("98327",Date.parse("2026-10-10T06:00:00Z")).rain6.tenths,70);
+assert.equal(context.SynopHistory.find("98327",Date.parse("2026-10-10T12:00:00Z")),null,"popup must not save unfinished future periods");
+console.log("Rainfall popup open/save/close controller checks passed");
+// The exact field and manual evidence duration follow main/intermediate time.
+assert.equal(context.document.getElementById('rainOccurredLabel').textContent,'Rainfall occurred during the previous 3 hours');
+assert.equal(context.document.getElementById('rainAmountLabel').textContent,'Exact rainfall during the previous 3 hours (mm)');
+assert.equal(context.document.getElementById('rain6Wrap').hidden,true,'exact input stays hidden until checked');
+context.document.getElementById('rain6').value='0.8';rainBox.checked=true;rainBox.dispatch('change');assert.equal(context.document.getElementById('rain6Wrap').hidden,false);
+context.document.getElementById('validate').dispatch('click');
+let intermediateRecord=context.SynopHistory.find('98327',Date.parse('2026-10-10T09:00:00Z'));
+assert.equal(intermediateRecord.rain3.tenths,8);assert.equal(intermediateRecord.rain6,undefined);
+assert.ok(intermediateRecord.rainEvidence.some(e=>e.source==='manual'&&e.start===Date.parse('2026-10-10T06:00:00Z')));
+synopInput.value=synopInput.value.replace('100900','101200').replace('10091','10121');synopInput.dispatch('input');
+assert.equal(context.document.getElementById('rainOccurredLabel').textContent,'Rainfall occurred during the previous 6 hours');
+assert.equal(context.document.getElementById('rainAmountLabel').textContent,'Exact rainfall during the previous 6 hours (mm)');
+assert.equal(rainBox.checked,false,'different observation resets the checkbox');
+assert.equal(context.document.getElementById('rain6').value,'','intermediate amount must not carry into main amount');
+assert.ok(indexSource.indexOf('id="rain6"')>indexSource.indexOf('id="rainOccurred"')&&indexSource.indexOf('id="rain6"')<indexSource.indexOf('id="rainDialog"'));
+assert.equal((indexSource.match(/id="rain6"/g)||[]).length,1);
+console.log('Dynamic three/six-hour captions, inline input and saved evidence tests passed');
+
+// Auto-selection requires matching rainfall, and preserves user overrides.
+synopInput.value="SIPH20 RPLC 100900 AAXX 10091 98327 21460 83501 10261 20242 39946 40119 53004 70262 8211/ 333 56999 60077 82820 88460=";synopInput.dispatch('input');
+assert.equal(rainBox.checked,true);assert.equal(context.document.getElementById('rain6Wrap').hidden,false);
+rainBox.checked=false;rainBox.dispatch('change');assert.equal(context.document.getElementById('rain6Wrap').hidden,true);
+synopInput.value=synopInput.value.replace('10261','10262');synopInput.dispatch('input');assert.equal(rainBox.checked,false,'unchanged rainfall respects manual override');
+synopInput.value=synopInput.value.replace('60077','69907');synopInput.dispatch('input');assert.equal(rainBox.checked,true,'new matching trace evidence selects the box');
+context.document.getElementById('rain6').value='T';context.document.getElementById('validate').dispatch('click');
+assert.equal(context.SynopHistory.find('98327',Date.parse('2026-10-10T09:00:00Z')).rain3.trace,true);
+synopInput.value="SMPH20 RPLC 110000 AAXX 11001 98327 12465 70701 10278 20249 39942 40115 51015 60074 81108 333 20250 55076 56909 59008 70065 81820 87280=";synopInput.dispatch('input');assert.equal(rainBox.checked,false,'24-hour reports alone never select the box');
+synopInput.value=synopInput.value.replace('=',' 555 20005=');synopInput.dispatch('input');assert.equal(rainBox.checked,true,'18-24 UTC Section 5 rain selects the six-hour box');
+synopInput.value=synopInput.value.replace('20005','20000');synopInput.dispatch('input');assert.equal(rainBox.checked,false);
+console.log('Period-only rainfall auto-selection, override, conditional field and T input tests passed');
+context.SynopHistory.save('98503',Date.parse('2026-10-10T03:00:00Z'),{rain3:{tenths:72,trace:false}});
+synopInput.value='SMPH20 RPLC 100600 AAXX 10061 98503 11460 83501 10261 20242 39946 40119 53004 70262 8211/ 333 56999 82820 88460=';
+synopInput.value=synopInput.value.replace('53004','53004 60071');synopInput.dispatch('input');context.document.getElementById('obsDate').value='2026-10-10';context.document.getElementById('obsDate').dispatch('change');context.document.getElementById('rain6').value='7.1';context.document.getElementById('validate').dispatch('click');
+assert.ok(context.document.getElementById('results').innerHTML.includes('Six-hour rainfall is lower than saved three-hour rainfall'),'page must connect saved exact three-hour values to the rule');
+console.log('Saved three-hour to current main-report controller cross-check passed');
